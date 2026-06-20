@@ -1,0 +1,209 @@
+# @talkd/pi-voice
+
+Pi package that adds a clean, headless F12 Talkd copilot to Pi.
+
+Talkd runs as a separate side-agent context. Press F12 to talk to it; it watches the current visible Pi harness session and talks with you about what is happening. It only sends messages into the main harness when it decides there is an actionable coding instruction to send.
+
+It uses:
+
+- Pi extension API for commands, shortcuts, status, and overlays
+- `talkd-service` for local STT/TTS over `~/.talkd/talkd.sock`
+- SoX `rec` for microphone capture by default
+- `afplay` for playback by default on macOS
+
+## Setup
+
+Installing this package runs a best-effort runtime setup step that installs native Sherpa/ONNX libraries, STT/TTS model assets, and a `talkd-service` binary into `~/.talkd` when a full talkd checkout and Go toolchain are available.
+
+From the repo root you can also run setup explicitly:
+
+```bash
+bun install
+bun --cwd packages/pi-voice run setup:runtime
+bun run build
+```
+
+For distribution validation, run the root Dagger gate instead:
+
+```bash
+bun run ci
+```
+
+Set `TALKD_PI_VOICE_SKIP_SETUP=1` to skip install-time setup, or `TALKD_PI_VOICE_FORCE_SETUP=1` to force reinstall checks.
+
+Runtime setup currently supports macOS arm64/x64 and Linux x64/arm64. Native Windows is not currently supported by the Unix-socket service/setup path. On Linux, set `TALKD_PLAY_CMD` to an available WAV player such as `aplay {file}` or `paplay {file}`.
+
+## Try without installing
+
+```bash
+pi -e ./packages/pi-voice/src/index.ts
+```
+
+Inside Pi:
+
+```text
+F12  start listening
+F12  stop recording and send to Talkd
+F12  while speaking/thinking: interrupt and start listening
+```
+
+Fallback shortcut:
+
+```text
+Ctrl+Shift+V
+```
+
+No floating panel is shown. Pi only shows a compact status indicator while Talkd is active. On session start, the extension ensures `talkd-service` is running in the background: it reuses an existing service if one responds on the socket, otherwise it starts `~/.talkd/bin/talkd-service` or the local checkout service without blocking the active Pi UI. Detailed transcript/timing/playback debug output is hidden by default and can be written to a file with `TALKD_VOICE_DEBUG=1`.
+
+The transcript is **not** blindly pasted into the main Pi session. The Talkd side-agent is read-only/coordination-only: it does not receive Pi file-editing, write, bash, or other coding tools. Instead:
+
+1. Your speech goes to the Talkd side-agent context.
+2. Talkd reads a live snapshot/recent event log of the main harness.
+3. It answers you conversationally.
+4. If work should happen in the harness, it uses its `send_to_harness` tool to send a clear instruction to the main Pi session.
+
+You can also use:
+
+```text
+/voice
+```
+
+## Install as project-local Pi package
+
+```bash
+pi install -l ./packages/pi-voice
+```
+
+Then restart Pi or run:
+
+```text
+/reload
+```
+
+## Commands
+
+```text
+/voice  same as F12: talk/send/interrupt
+```
+
+## Environment variables
+
+```bash
+# talkd socket
+export TALKD_SOCK="$HOME/.talkd/talkd.sock"
+
+# install location for runtime assets and the default service binary
+export TALKD_HOME="$HOME/.talkd"
+
+# service startup override
+export TALKD_SERVICE_CMD="$HOME/.talkd/bin/talkd-service --sock $HOME/.talkd/talkd.sock"
+
+# microphone capture command, must output raw pcm16le mono 16k to stdout
+export TALKD_RECORD_CMD='rec -q -t raw -b 16 -e signed-integer -c 1 -r 16000 -'
+
+# playback command; {file} is replaced with generated wav path
+export TALKD_PLAY_CMD='afplay {file}'
+
+# minimum gap between proactive spoken harness updates
+export TALKD_MIN_PROACTIVE_GAP_MS=10000
+
+# persisted Talkd recent state; stores only recent Talkd turns/decisions
+# defaults to ~/.pi/agent/talkd-voice-state.json
+export TALKD_VOICE_STATE_PATH="$HOME/.pi/agent/talkd-voice-state.json"
+export TALKD_VOICE_RECENT_TURNS=16
+export TALKD_VOICE_RECENT_DECISIONS=20
+
+# incremental speech synthesis chunking; larger chunks sound more natural
+export TALKD_STREAMING_TTS_MIN_CHARS=110
+export TALKD_STREAMING_TTS_MIN_WORDS=16
+export TALKD_STREAMING_TTS_CHUNK_CHARS=280
+
+# optional: persist Talkd's own lightweight side-agent session.
+# unset by default; Talkd does not fork/copy the full main Pi session.
+# export TALKD_VOICE_SESSION_DIR="$HOME/.pi/agent/sessions/talkd-voice"
+
+# optional debug logging; writes to a file instead of the active Pi display by default
+export TALKD_VOICE_DEBUG=1
+export TALKD_VOICE_DEBUG_LOG=/tmp/talkd-pi-voice-debug.log
+
+# optional latency/stuck-thinking diagnostics only; also writes to TALKD_VOICE_DEBUG_LOG
+export TALKD_VOICE_LATENCY_DEBUG=1
+export TALKD_VOICE_AGENT_TIMEOUT_MS=120000
+export TALKD_VOICE_THINKING_NOTICE_MS=12000
+export TALKD_VOICE_THINKING_NOTICE_INTERVAL_MS=10000
+
+# optional: show a one-line debug widget in Pi (off by default to keep UI clear)
+export TALKD_VOICE_DEBUG_UI=1
+```
+
+## Talkd side-agent skill and maintainer skill
+
+Talkd's runtime side-agent activates a dedicated side-agent skill from `side-agent-skills/talkd-side-agent-voice-copilot/SKILL.md`. The extension loads only that explicit skill path while keeping default skill discovery disabled, then injects the skill content into hidden side-agent context. This keeps the runtime lightweight while giving Talkd its actual speaking/watching behavior.
+
+This package also provides a Pi maintainer skill at `skills/talkd-voice-copilot/SKILL.md`. Use `/skill:talkd-voice-copilot` when implementing, reviewing, or tuning Talkd behavior. The maintainer skill should stay aligned with the runtime side-agent skill.
+
+## Side-agent architecture
+
+Talkd uses a lightweight side-agent context so spoken interaction stays responsive even when the main Pi transcript is large.
+
+For each Talkd turn, the side-agent gets context in this form:
+
+1. **Current harness snapshot in the prompt.** The prompt includes the visible Pi harness state, recent event log, editor text, and branch summary.
+2. **Talkd side-agent instructions and activated side-agent skill.** Hidden marked messages define Talkd's role, speaking/watching behavior, and read-only/coordination-only contract.
+3. **Persisted recent Talkd conversation and decisions.** A small Talkd-specific state record is appended for spoken continuity and recency.
+
+The full main Pi transcript is no longer prepended to the Talkd side-agent context by default. When Talkd needs fresher details, it uses the `get_harness_state` coordination tool.
+
+By default, only Talkd-specific recent state is persisted:
+
+```text
+~/.pi/agent/talkd-voice-state.json
+```
+
+Configure it with:
+
+- `TALKD_VOICE_STATE_PATH` — override the state file path.
+- `TALKD_VOICE_RECENT_TURNS` — number of recent Talkd user/assistant turns to keep; default `16`.
+- `TALKD_VOICE_RECENT_DECISIONS` — number of proactive decision records to keep; default `20`.
+
+`TALKD_VOICE_SESSION_DIR` is intentionally **unset by default**. If set, Talkd may persist its own lightweight side-agent session in that directory. It does not fork or copy the full active main Pi session by default.
+
+### Coordination-only tools
+
+Talkd does not receive direct coding tools. It cannot directly read, edit, write files, run shell commands, or inspect the filesystem. Its tools are limited to coordination:
+
+- `get_harness_state` — inspect the visible Pi harness snapshot, recent events, editor text, and branch summary.
+- `send_to_harness` — send a user-approved actionable instruction to the main Pi harness.
+- `add_harness_note` — add a hidden note to the main harness context without directly performing work.
+
+### Proactive decision records
+
+When the main harness changes, Talkd decides whether to stay quiet or speak a short update. Both outcomes are recorded in Talkd's recent state and, for the current side-agent turn, as hidden marked context:
+
+```text
+<<<TALKD_PROACTIVE_DECISION_BEGIN>>>
+record_type: proactive_harness_update_decision
+decision: SILENCE | SPOKEN_UPDATE
+...
+<<<TALKD_PROACTIVE_DECISION_END>>>
+```
+
+These records are distinguishable from normal user/assistant turns and from main harness snapshot/tool context.
+
+### Incremental speech synthesis
+
+Talkd streams assistant text into TTS incrementally, but buffers larger natural chunks before synthesis to avoid choppy playback. It prefers complete sentence boundaries and otherwise waits for a reasonable threshold before flushing.
+
+Tuning knobs:
+
+- `TALKD_STREAMING_TTS_MIN_CHARS` — minimum chunk size before a natural flush; default `110`.
+- `TALKD_STREAMING_TTS_MIN_WORDS` — word-count threshold for a natural flush; default `16`.
+- `TALKD_STREAMING_TTS_CHUNK_CHARS` — fallback maximum chunk size when no sentence boundary arrives; default `280`.
+
+Barge-in behavior is preserved: pressing F12 during thinking, TTS generation, or playback interrupts the side-agent/playback and starts listening again.
+
+## Notes
+
+- Main Pi responses are not read aloud by default.
+- Spoken replies come from Talkd, not from the main coding agent transcript.
+- `talkd-service` is shared and reused across Pi sessions.

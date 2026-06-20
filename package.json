@@ -1,0 +1,27 @@
+{
+  "name": "talkd-monorepo",
+  "private": true,
+  "packageManager": "bun@1.3.8",
+  "workspaces": [
+    "packages/*",
+    "talkd-service"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "bun --cwd talkd-service dev",
+    "check": "turbo run check",
+    "test": "turbo run test",
+    "service": "bun --cwd talkd-service dev",
+    "install:runtime": "./scripts/install-runtime.sh",
+    "ci": "dagger call ci --source=.",
+    "dagger:check": "dagger call check --source=.",
+    "dagger:build": "dagger call build --source=.",
+    "dagger:test": "dagger call test --source=.",
+    "dagger:validate": "dagger call validate-distribution --source=.",
+    "dagger:ci": "dagger call ci --source=."
+  },
+  "devDependencies": {
+    "turbo": "latest",
+    "typescript": "latest"
+  }
+}

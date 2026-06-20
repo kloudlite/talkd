@@ -1,0 +1,12 @@
+{
+  "name": "@talkd/service",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "go build -o bin/talkd-service ./cmd/talkd-service && go build -o bin/talkd-client ./cmd/talkd-client",
+    "dev": "go run ./cmd/talkd-service",
+    "check": "go test ./...",
+    "test": "go test ./...",
+    "install:binary": "../scripts/install-binary.sh ./bin/talkd-service talkd-service"
+  }
+}

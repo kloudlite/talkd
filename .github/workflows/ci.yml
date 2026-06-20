@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dagger-ci:
+    name: Dagger CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify Docker engine
+        run: docker version
+
+      - name: Install Dagger CLI
+        env:
+          DAGGER_VERSION: 0.21.7
+        run: |
+          set -euo pipefail
+          curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sh
+          dagger version
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+
+      - name: Run Dagger CI
+        env:
+          # Dagger uses the Docker daemon available on GitHub-hosted Ubuntu runners
+          # to start its engine container.
+          DOCKER_HOST: unix:///var/run/docker.sock
+        run: bun run ci

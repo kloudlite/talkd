@@ -1,0 +1,34 @@
+# Bun / Node
+node_modules/
+bun.lockb
+
+# Turbo
+.turbo/
+**/.turbo/
+
+# Build outputs
+apps/*/dist/
+talkd-service/bin/
+
+# Go
+*.test
+
+# Local runtime/models
+.talkd/
+sherpa-models/
+kokoro-en/
+
+# Local experimental/vendor checkouts
+kokoro.cpp/
+whisper.cpp/
+go-kokoro/
+go-sherpa-stt/
+
+# Audio/test artifacts
+*.wav
+*.pcm
+whisper-output*.txt
+stt-test*.txt
+
+# macOS
+.DS_Store
