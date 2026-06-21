@@ -75,7 +75,7 @@ export class HarnessWatcher {
       model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "unknown",
       idle: ctx.isIdle(),
       contextUsage: usage ? `${usage.tokens ?? "?"}/${usage.contextWindow} tokens (${usage.percent ?? "?"}%)` : undefined,
-      activeTools: ctx.sessionManager ? [] : [],
+      activeTools: [],
       currentEditorText: ctx.ui.getEditorText?.(),
       recentEvents: this.events.slice(-30),
       branch: summarizeBranch(entries),
@@ -99,37 +99,28 @@ export class VoiceAgent {
 
   constructor(private readonly options: VoiceAgentOptions) {}
 
-  async ask(userSpeech: string, ctx: ExtensionContext): Promise<string> {
-    this.options.watcher.attach(ctx);
-    const snapshot = this.enrichSnapshot(this.options.watcher.snapshot(ctx));
-    const unclear = await this.tryUnclearSpeechReply(userSpeech);
-    if (unclear) return unclear;
-    const local = await this.tryLocalFastReply(userSpeech, snapshot);
-    if (local) return local;
-    const quick = await this.tryBusyHarnessReply(userSpeech, snapshot);
-    if (quick) return quick;
-    return this.runPrompt(buildVoicePrompt(userSpeech, snapshot), ctx, { rememberUserSpeech: userSpeech });
+  ask(userSpeech: string, ctx: ExtensionContext): Promise<string> {
+    return this.answer(userSpeech, ctx);
   }
 
-  async askStreaming(userSpeech: string, ctx: ExtensionContext, onTextDelta: (delta: string) => void): Promise<string> {
+  askStreaming(userSpeech: string, ctx: ExtensionContext, onTextDelta: (delta: string) => void): Promise<string> {
+    return this.answer(userSpeech, ctx, onTextDelta);
+  }
+
+  private async answer(userSpeech: string, ctx: ExtensionContext, onTextDelta?: (delta: string) => void): Promise<string> {
     this.options.watcher.attach(ctx);
     const snapshot = this.enrichSnapshot(this.options.watcher.snapshot(ctx));
-    const unclear = await this.tryUnclearSpeechReply(userSpeech);
-    if (unclear) {
-      onTextDelta(unclear);
-      return unclear;
-    }
-    const local = await this.tryLocalFastReply(userSpeech, snapshot);
-    if (local) {
-      onTextDelta(local);
-      return local;
-    }
-    const quick = await this.tryBusyHarnessReply(userSpeech, snapshot);
-    if (quick) {
-      onTextDelta(quick);
-      return quick;
-    }
+    const fast = await this.tryFastReply(userSpeech, snapshot, onTextDelta);
+    if (fast) return fast;
     return this.runPrompt(buildVoicePrompt(userSpeech, snapshot), ctx, { onTextDelta, rememberUserSpeech: userSpeech });
+  }
+
+  private async tryFastReply(userSpeech: string, snapshot: HarnessSnapshot, onTextDelta?: (delta: string) => void): Promise<string | undefined> {
+    const reply = await this.tryUnclearSpeechReply(userSpeech)
+      ?? await this.tryLocalFastReply(userSpeech, snapshot)
+      ?? await this.tryBusyHarnessReply(userSpeech, snapshot);
+    if (reply) onTextDelta?.(reply);
+    return reply;
   }
 
   async observeHarnessChange(change: string, ctx: ExtensionContext): Promise<string> {

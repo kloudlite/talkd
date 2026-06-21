@@ -26,9 +26,7 @@ export class VoiceController {
   private idleReactionTimer?: ReturnType<typeof setTimeout>;
   private recordingLimitTimer?: ReturnType<typeof setTimeout>;
   private recordingReleaseTimer?: ReturnType<typeof setTimeout>;
-  private recordingStartedAt = 0;
   private lastRecordingShortcutAt = 0;
-  private sawRecordingRepeat = false;
   private lastHarnessChange = "";
   private pendingSkippedHarnessChange = "";
   private lastSpokenAt = 0;
@@ -122,9 +120,7 @@ export class VoiceController {
     this.speechQueue = undefined;
     this.playback?.stop();
     this.playback = undefined;
-    this.recordingStartedAt = Date.now();
-    this.lastRecordingShortcutAt = this.recordingStartedAt;
-    this.sawRecordingRepeat = false;
+    this.lastRecordingShortcutAt = Date.now();
     this.recorder = startRecording(16000);
     this.setState("listening", ctx, message);
     this.scheduleRecordingLimit(ctx);
@@ -137,7 +133,6 @@ export class VoiceController {
     this.lastRecordingShortcutAt = now;
 
     if (gapMs <= repeatGapMs) {
-      this.sawRecordingRepeat = true;
       this.scheduleRecordingReleaseInference(ctx, repeatGapMs);
       voiceLatencyLog("recording.shortcut_repeat_ignored", { gapMs, repeatGapMs });
       return;
@@ -149,7 +144,7 @@ export class VoiceController {
   private scheduleRecordingReleaseInference(ctx: PiCtx, repeatGapMs: number) {
     this.clearRecordingReleaseTimer();
     this.recordingReleaseTimer = setTimeout(() => {
-      if (this.state !== "listening" || !this.recorder || !this.sawRecordingRepeat) return;
+      if (this.state !== "listening" || !this.recorder) return;
       voiceLatencyLog("recording.release_inferred", { repeatGapMs });
       void this.stopAndDiscuss(ctx);
     }, repeatGapMs);
@@ -646,46 +641,37 @@ function cleanSpeechChunk(text: string): string {
   return toPlainSpeechText(text).trim();
 }
 
-function voiceIndicator(state: State, detail?: string): {
-  status(theme: PiCtx["ui"]["theme"]): string;
-  widget(theme: PiCtx["ui"]["theme"]): string;
-} {
+function voiceIndicator(state: State, detail?: string): { widget(theme: PiCtx["ui"]["theme"]): string } {
   const interrupted = /interrupted/i.test(detail ?? "");
   if (state === "listening") {
     return {
-      status: (theme) => theme.fg("accent", interrupted ? "Talkd: interrupted, recording" : "Talkd: recording active"),
       widget: (theme) => theme.fg("accent", interrupted ? "[REC] Talkd: interrupted, recording" : "[REC] Talkd: recording active") + theme.fg("dim", " — mic is on now. Release F12 to send, or press F12 again."),
     };
   }
   if (state === "transcribing") {
     return {
-      status: (theme) => theme.fg("warning", "Talkd: transcribing"),
       widget: (theme) => theme.fg("warning", "[STT] Talkd: transcribing") + theme.fg("dim", " — converting your speech to text."),
     };
   }
   if (state === "thinking") {
     const preparingSpeech = /speech|tts|prepar/i.test(detail ?? "");
     return {
-      status: (theme) => theme.fg("warning", preparingSpeech ? "Talkd: preparing reply" : "Talkd: thinking"),
       widget: (theme) => theme.fg("warning", preparingSpeech ? "[TTS] Talkd: preparing reply" : "[THINK] Talkd: thinking") + theme.fg("dim", preparingSpeech ? " — generating the spoken response." : " — assistant is thinking."),
     };
   }
   if (state === "speaking") {
     return {
-      status: (theme) => theme.fg("success", "Talkd: speaking"),
       widget: (theme) => theme.fg("success", "[PLAY] Talkd: speaking") + theme.fg("dim", " — press F12 to interrupt/barge in."),
     };
   }
   if (state === "error") {
     const message = detail ? ` — ${compactForWidget(detail, 100)}` : "";
     return {
-      status: (theme) => theme.fg("error", "Talkd: error"),
       widget: (theme) => theme.fg("error", "[ERR] Talkd: error") + theme.fg("dim", message),
     };
   }
   const done = /done|complete|finished/i.test(detail ?? "");
   return {
-    status: (theme) => theme.fg("dim", done ? "Talkd: done" : "Talkd: ready (F12)"),
     widget: (theme) => theme.fg("dim", done ? "[DONE] Talkd: done — press F12 to record." : "[READY] Talkd: ready — press F12 to record."),
   };
 }

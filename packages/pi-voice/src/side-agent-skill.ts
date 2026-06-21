@@ -31,8 +31,8 @@ async function readTalkdSideAgentSkill(): Promise<TalkdSideAgentSkill> {
   try {
     const raw = await readFile(path, "utf8");
     return {
-      name: extractFrontmatterString(raw, "name") ?? TALKD_SIDE_AGENT_SKILL_NAME,
-      version: extractFrontmatterVersion(raw) ?? TALKD_SIDE_AGENT_SKILL_VERSION,
+      name: TALKD_SIDE_AGENT_SKILL_NAME,
+      version: TALKD_SIDE_AGENT_SKILL_VERSION,
       path,
       content: raw.trim(),
       fallback: false,
@@ -46,18 +46,4 @@ async function readTalkdSideAgentSkill(): Promise<TalkdSideAgentSkill> {
       fallback: true,
     };
   }
-}
-
-function extractFrontmatterString(raw: string, key: string): string | undefined {
-  const frontmatter = raw.match(/^---\n([\s\S]*?)\n---/);
-  if (!frontmatter?.[1]) return undefined;
-  const match = frontmatter[1].match(new RegExp(`^${key}:\\s*(.+)$`, "m"));
-  return match?.[1]?.trim().replace(/^['"]|['"]$/g, "");
-}
-
-function extractFrontmatterVersion(raw: string): string | undefined {
-  const frontmatter = raw.match(/^---\n([\s\S]*?)\n---/);
-  if (!frontmatter?.[1]) return undefined;
-  const match = frontmatter[1].match(/^\s*version:\s*(.+)$/m);
-  return match?.[1]?.trim().replace(/^['"]|['"]$/g, "");
 }

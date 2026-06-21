@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"flag"
 	"log"
 	"os"
@@ -15,7 +16,7 @@ func main() {
 
 	home, _ := os.UserHomeDir()
 	defaultHome := filepath.Join(home, ".talkd")
-	talkdHome := flag.String("home", getenv("TALKD_HOME", defaultHome), "talkd home directory")
+	talkdHome := flag.String("home", cmp.Or(os.Getenv("TALKD_HOME"), defaultHome), "talkd home directory")
 	sockPath := flag.String("sock", "", "Unix socket path; default: $TALKD_HOME/talkd.sock")
 	threads := flag.Int("threads", 4, "number of inference threads")
 	debug := flag.Int("debug", 0, "1 to enable Sherpa debug logs")
@@ -42,11 +43,4 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func getenv(k, fallback string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return fallback
 }

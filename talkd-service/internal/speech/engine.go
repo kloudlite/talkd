@@ -40,11 +40,6 @@ type TTSChunk struct {
 
 type TTSChunkFunc func(TTSChunk) bool
 
-type TTSResult struct {
-	SampleRate int
-	Samples    int
-}
-
 func New(cfg Config) (*Engine, error) {
 	if cfg.Provider == "" {
 		cfg.Provider = "cpu"
@@ -111,10 +106,10 @@ func (e *Engine) TTSSampleRate() int {
 	return e.tts.SampleRate()
 }
 
-func (e *Engine) GenerateTTS(req TTSRequest, cb TTSChunkFunc) (*TTSResult, error) {
+func (e *Engine) GenerateTTS(req TTSRequest, cb TTSChunkFunc) error {
 	text := strings.TrimSpace(req.Text)
 	if text == "" {
-		return nil, errors.New("tts text is empty")
+		return errors.New("tts text is empty")
 	}
 	if req.Speed == 0 {
 		req.Speed = 1.0
@@ -133,11 +128,11 @@ func (e *Engine) GenerateTTS(req TTSRequest, cb TTSChunkFunc) (*TTSResult, error
 	e.ttsMu.Unlock()
 
 	if generated == nil {
-		return nil, errors.New("tts generation failed")
+		return errors.New("tts generation failed")
 	}
 
 	log.Printf("tts generated %.2fs audio in %s", float32(len(generated.Samples))/float32(generated.SampleRate), time.Since(start).Round(time.Millisecond))
-	return &TTSResult{SampleRate: generated.SampleRate, Samples: len(generated.Samples)}, nil
+	return nil
 }
 
 func (e *Engine) NewSTTSession(sampleRate int) *STTSession {

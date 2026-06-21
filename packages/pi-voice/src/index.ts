@@ -46,28 +46,24 @@ export default function talkdVoiceExtension(pi: ExtensionAPI) {
     if (options?.react) voice.onHarnessEvent(line, ctx);
   }
 
+  async function toggleVoice(ctx: ExtensionContext) {
+    attach(ctx);
+    await voice.toggle(ctx);
+  }
+
   pi.registerCommand("voice", {
     description: "Start/stop Talkd recording for this Pi harness",
-    handler: async (_args, ctx) => {
-      attach(ctx);
-      await voice.toggle(ctx);
-    },
+    handler: async (_args, ctx) => toggleVoice(ctx),
   });
 
   pi.registerShortcut(Key.f12, {
     description: "Talkd recording: start/send/interrupt",
-    handler: async (ctx) => {
-      attach(ctx);
-      await voice.toggle(ctx);
-    },
+    handler: toggleVoice,
   });
 
   pi.registerShortcut(Key.ctrlShift("v"), {
     description: "Talkd recording: start/send/interrupt",
-    handler: async (ctx) => {
-      attach(ctx);
-      await voice.toggle(ctx);
-    },
+    handler: toggleVoice,
   });
 
   pi.on("session_start", (_event, ctx) => {

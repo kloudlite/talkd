@@ -7,7 +7,7 @@ This directory contains the Go SDK implementation for the Talkd distribution pip
 From the repository root:
 
 ```bash
-bun run ci                 # check + build + test + distribution validation
+bun run ci                 # check + build + distribution validation
 bun run dagger:check
 bun run dagger:build
 bun run dagger:test
@@ -24,7 +24,8 @@ dagger call service-binaries --source=. export --path ./dist/service
 
 - `PiCheck`: `bun --cwd packages/pi-voice run check`
 - `PiBuild`: `bun --cwd packages/pi-voice run build`
-- `ServiceCheck` / `ServiceTest`: `go test ./...` in `talkd-service`
+- `ServiceCheck`: `go test ./...` in `talkd-service`
+- `ServiceTest`: same Go test command, available as an explicit standalone target
 - `ServiceBuild`: Linux container build of `talkd-service` and `talkd-client`
 - `ValidateDistribution`: static checks for stale runtime-guidance/overlay leftovers, deleted experimental folders, package metadata, side-agent skills, and installer script syntax
 

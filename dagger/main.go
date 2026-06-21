@@ -73,7 +73,7 @@ func (m *Talkd) Test(ctx context.Context, source *dagger.Directory) (string, err
 	return out + "test completed\n", nil
 }
 
-// Ci runs the full distribution gate: checks, builds, tests, and static distribution validation.
+// Ci runs the distribution gate: checks, builds, and static distribution validation.
 func (m *Talkd) Ci(ctx context.Context, source *dagger.Directory) (string, error) {
 	var b strings.Builder
 	for _, step := range []struct {
@@ -82,7 +82,6 @@ func (m *Talkd) Ci(ctx context.Context, source *dagger.Directory) (string, error
 	}{
 		{"check", m.Check},
 		{"build", m.Build},
-		{"test", m.Test},
 		{"validate-distribution", m.ValidateDistribution},
 	} {
 		b.WriteString(fmt.Sprintf("==> %s\n", step.name))

@@ -104,7 +104,7 @@ func (s *Server) handleTTS(w *bufio.Writer, req protocol.Frame) error {
 		return err
 	}
 
-	_, err := s.Engine.GenerateTTS(speech.TTSRequest{
+	err := s.Engine.GenerateTTS(speech.TTSRequest{
 		Text:  req.Text,
 		Speed: req.Speed,
 		Sid:   req.Sid,

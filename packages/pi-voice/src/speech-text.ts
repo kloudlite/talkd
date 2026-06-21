@@ -41,7 +41,6 @@ function ensureTerminalPunctuation(text: string): string {
   return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
-
 export function toPlainSpeechText(text: string): string {
   return text
     .replace(/[‘’]/g, "'")

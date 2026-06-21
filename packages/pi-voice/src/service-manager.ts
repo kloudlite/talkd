@@ -106,8 +106,9 @@ async function runPackageSetup(logPath: string): Promise<void> {
 }
 
 function serviceEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, TALKD_HOME: defaultTalkdHome() };
-  const libDir = join(defaultTalkdHome(), "lib");
+  const home = defaultTalkdHome();
+  const env: NodeJS.ProcessEnv = { ...process.env, TALKD_HOME: home };
+  const libDir = join(home, "lib");
   env.DYLD_LIBRARY_PATH = prependPath(libDir, env.DYLD_LIBRARY_PATH);
   env.LD_LIBRARY_PATH = prependPath(libDir, env.LD_LIBRARY_PATH);
   return env;

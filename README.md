@@ -93,10 +93,10 @@ The runtime installer supports macOS arm64/x64 and Linux x64/arm64. Native Windo
 
 ## Distribution workflow with Dagger
 
-The source distribution gate is implemented as a Dagger module in `dagger/`. It runs the Pi TypeScript checks/build, the Go service checks/tests/build in Linux containers, and static distribution validation for stale files/references. GitHub Actions runs the same gate from `.github/workflows/ci.yml` on `ubuntu-latest`, assuming the standard GitHub-hosted Docker daemon is available for Dagger.
+The source distribution gate is implemented as a Dagger module in `dagger/`. It runs the Pi TypeScript checks/build, Go service checks, Linux service builds, and static distribution validation for stale files/references. GitHub Actions runs the same gate from `.github/workflows/ci.yml` on `ubuntu-latest`, assuming the standard GitHub-hosted Docker daemon is available for Dagger.
 
 ```bash
-# full gate: check, build, test, distribution validation
+# gate: check, build, distribution validation
 bun run ci
 
 # individual Dagger stages
@@ -143,24 +143,9 @@ pi install -l ./packages/pi-voice
 
 Installing `@talkd/pi-voice` runs a best-effort setup step that downloads native runtime libraries and STT/TTS model assets, builds `talkd-service` when the Go source is available, and installs the service binary under `~/.talkd/bin`. Set `TALKD_PI_VOICE_SKIP_SETUP=1` to skip that install-time setup.
 
-Inside Pi:
+Inside Pi, Talkd is explicit recording only: F12 starts recording, F12 release is inferred from stopped key repeats when available, and F12 again is the fallback send action. See `packages/pi-voice/README.md` for the detailed controls and knobs.
 
-```text
-F12 down  start recording
-F12 up    send after Talkd infers release from stopped key repeats
-F12 again fallback: stop recording and send
-F12 while speaking/thinking: interrupt and start recording
-```
-
-Fallback shortcut:
-
-```text
-Ctrl+Shift+V
-```
-
-No panel is shown; Pi only shows a compact footer/status indicator. Talkd does not continuously listen in the background: the microphone is off in the ready/done states, and only `[REC] Talkd: recording active` records audio. Pi's current terminal shortcut API exposes key presses, not direct key-release events, so Talkd ignores F12 auto-repeat while recording and infers release when repeats stop. If a terminal does not provide usable repeats, pressing F12 again is the fallback send action. When a Pi session starts, the extension ensures `talkd-service` is available in the background: it reuses an existing socket service if present and starts the installed/local service otherwise without blocking the active Pi UI. Detailed transcript/timing/playback debug output is hidden by default and can be sent to a file with `TALKD_VOICE_DEBUG=1`.
-
-Your speech goes to a separate lightweight Talkd side-agent context. Talkd uses the current harness snapshot and coordination tools for main Pi context, then activates its own side-agent skill, side-agent instructions/state, and the persisted recent Talkd conversation and decisions for recency. The copilot is read-only/coordination-only: it watches the visible/main harness session, talks with you about what is happening, can proactively respond when useful, and only sends instructions into the main harness when there is actionable work to do. It does not receive direct file editing, writing, shell, or coding tools. By default only Talkd's small recent state is persisted at `~/.pi/agent/talkd-voice-state.json`; `TALKD_VOICE_SESSION_DIR` is optional for persisting Talkd's own lightweight side-agent session. The runtime side-agent skill lives at `packages/pi-voice/side-agent-skills/talkd-side-agent-voice-copilot/SKILL.md`; the package also provides `/skill:talkd-voice-copilot` as reusable maintainer guidance for Talkd behavior and latency work. See `packages/pi-voice/README.md` for the full side-agent architecture.
+Talkd uses a lightweight, read-only side-agent with harness snapshots and coordination tools, not direct coding tools. See `packages/pi-voice/README.md` for the full side-agent architecture and runtime skill details.
 
 ## Start the service manually
 
@@ -178,74 +163,7 @@ The service listens on:
 
 ## Voice extension behavior
 
-The Pi extension provides explicit Talkd recording controls:
-
-```text
-press and hold F12
-  → start recording
-release F12
-  → Talkd infers release from stopped key repeats and stops recording
-press F12 again
-  → fallback stop recording
-  → stream PCM to talkd STT
-  → send transcript to a private Talkd side-agent context
-  → optionally send actionable instructions to the main Pi harness
-  → stream the copilot's spoken reply to talkd TTS
-  → play the generated audio
-press F12 while speaking/thinking
-  → interrupt playback/agent
-  → start recording again
-```
-
-Defaults:
-
-- recording uses `rec` from SoX only while a Talkd recording turn is active:
-  ```bash
-  rec -q -t raw -b 16 -e signed-integer -c 1 -r 16000 -
-  ```
-- active recording is capped by `TALKD_PUSH_TO_TALK_MAX_MS` to avoid accidental open-mic recording
-- playback uses macOS `afplay`; on Linux set `TALKD_PLAY_CMD`, for example `aplay {file}` or `paplay {file}`
-- the service socket is `~/.talkd/talkd.sock`
-
-Override commands and debug settings:
-
-```bash
-# custom microphone capture command; must write raw pcm16le mono 16k to stdout.
-# Runs only during active Talkd recording.
-export TALKD_RECORD_CMD='rec -q -t raw -b 16 -e signed-integer -c 1 -r 16000 -'
-
-# recording safety cap; prevents accidental open-mic recording
-export TALKD_PUSH_TO_TALK_MAX_MS=120000
-
-# max gap between terminal key-repeat events while inferring F12 release
-export TALKD_RECORDING_KEY_REPEAT_GAP_MS=900
-
-# custom playback command. {file} is replaced with generated wav path
-export TALKD_PLAY_CMD='afplay {file}'
-
-# install location for runtime assets and the default service binary
-export TALKD_HOME="$HOME/.talkd"
-
-# persisted Talkd recent state; main Pi context is provided by snapshot/tools
-export TALKD_VOICE_STATE_PATH="$HOME/.pi/agent/talkd-voice-state.json"
-export TALKD_VOICE_RECENT_TURNS=16
-export TALKD_VOICE_RECENT_DECISIONS=20
-
-# optional: persist Talkd's own lightweight side-agent session
-# export TALKD_VOICE_SESSION_DIR="$HOME/.pi/agent/sessions/talkd-voice"
-
-# incremental speech synthesis chunking
-export TALKD_STREAMING_TTS_MIN_CHARS=110
-export TALKD_STREAMING_TTS_MIN_WORDS=16
-export TALKD_STREAMING_TTS_CHUNK_CHARS=280
-
-# Pi package debug logging, written to a file instead of over the active Pi display
-export TALKD_VOICE_DEBUG=1
-export TALKD_VOICE_DEBUG_LOG=/tmp/talkd-pi-voice-debug.log
-
-# Optional Pi debug widget; off by default to keep the active UI unobstructed
-export TALKD_VOICE_DEBUG_UI=1
-```
+Talkd records only during an explicit user turn, sends speech to a lightweight read-only side-agent, and can pass actionable work back to the main Pi harness. Detailed F12 behavior, environment knobs, and side-agent notes live in `packages/pi-voice/README.md`.
 
 ## Socket protocol
 
@@ -328,6 +246,5 @@ bun run service        # Run Go socket service locally
 
 - Native libraries are dynamic and must be present before the service starts.
 - `scripts/install-runtime.sh` prepares those libraries and models.
-- `@talkd/pi-voice` install-time setup is idempotent and can be skipped with `TALKD_PI_VOICE_SKIP_SETUP=1`.
 - `talkd-service` is shared and reused across Pi sessions.
 - For true partial STT, replace the offline Whisper model with a Sherpa streaming ASR model.
