@@ -56,6 +56,7 @@ flowchart LR
 │   ├── cmd/talkd-client/     # small socket test client
 │   └── internal/             # protocol/server/speech packages
 └── scripts/
+    ├── install.sh            # curl-friendly source/runtime/Pi installer
     ├── install-runtime.sh    # installs native libs + models to ~/.talkd
     └── install-binary.sh     # installs built service and patches rpath
 ```
@@ -68,15 +69,18 @@ flowchart LR
 - `curl`, `tar`
 - `ffmpeg` only for converting test audio files
 
-## Install dependencies
+## Install with one command
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kloudlite/talkd/main/scripts/install.sh | bash
+```
+
+The installer supports macOS arm64/x64 and Linux x64/arm64. It clones Talkd to `~/.talkd/src/talkd`, runs the existing runtime setup, builds/installs `talkd-service`, registers the Pi package when `pi` is available, and prints next steps. Override with `TALKD_INSTALL_DIR`, `TALKD_REF`, or `TALKD_SKIP_PI_INSTALL=1`.
+
+## Manual install
 
 ```bash
 bun install
-```
-
-## Install native runtime and models
-
-```bash
 bun run install:runtime
 ```
 
@@ -130,14 +134,13 @@ Turbo local build runs:
 ## Use as a Pi plugin
 
 ```bash
+# one-command installer
+curl -fsSL https://raw.githubusercontent.com/kloudlite/talkd/main/scripts/install.sh | bash
+
+# or from a checkout
 bun install
 bun --cwd packages/pi-voice run setup:runtime
 bun run build
-
-# Try once
-pi -e ./packages/pi-voice/src/index.ts
-
-# Or install project-local
 pi install -l ./packages/pi-voice
 ```
 

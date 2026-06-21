@@ -1,5 +1,20 @@
 # talkd installer scripts
 
+## One-command installer
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kloudlite/talkd/main/scripts/install.sh | bash
+```
+
+This detects macOS arm64/x64 or Linux x64/arm64, clones Talkd to `~/.talkd/src/talkd`, runs the existing package/runtime setup, and registers the Pi package when the `pi` CLI is available.
+
+Overrides:
+
+```bash
+TALKD_INSTALL_DIR=/opt/talkd-src TALKD_REF=main TALKD_SKIP_PI_INSTALL=1 \
+  bash scripts/install.sh
+```
+
 ## Runtime/assets installer
 
 Installs Sherpa native libraries and model assets into `~/.talkd`:

@@ -185,6 +185,7 @@ for path in \
   packages/pi-voice/skills/talkd-voice-copilot/SKILL.md \
   talkd-service/cmd/talkd-service/main.go \
   talkd-service/internal/speech/engine.go \
+  scripts/install.sh \
   scripts/install-runtime.sh \
   scripts/install-binary.sh; do
   test -f "$path"
@@ -194,6 +195,7 @@ for stale in go-kokoro go-sherpa-stt kokoro.cpp whisper.cpp sherpa-models kokoro
   test ! -e "$stale"
 done
 
+bash -n scripts/install.sh
 bash -n scripts/install-runtime.sh
 bash -n scripts/install-binary.sh
 bash -n packages/pi-voice/scripts/setup-talkd-runtime.sh

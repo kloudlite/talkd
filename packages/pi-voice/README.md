@@ -15,6 +15,12 @@ It uses:
 
 Installing this package runs a best-effort runtime setup step that installs native Sherpa/ONNX libraries, STT/TTS model assets, and a `talkd-service` binary into `~/.talkd` when a full talkd checkout and Go toolchain are available.
 
+One-command install from GitHub:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kloudlite/talkd/main/scripts/install.sh | bash
+```
+
 From the repo root you can also run setup explicitly:
 
 ```bash
@@ -31,7 +37,7 @@ bun run ci
 
 Set `TALKD_PI_VOICE_SKIP_SETUP=1` to skip install-time setup, or `TALKD_PI_VOICE_FORCE_SETUP=1` to force reinstall checks.
 
-Runtime setup currently supports macOS arm64/x64 and Linux x64/arm64. Native Windows is not currently supported by the Unix-socket service/setup path. On Linux, set `TALKD_PLAY_CMD` to an available WAV player such as `aplay {file}` or `paplay {file}`.
+Runtime setup currently supports macOS arm64/x64 and Linux x64/arm64. Native Windows is not currently supported by the Unix-socket service/setup path. The curl installer uses `~/.talkd/src/talkd` by default and supports `TALKD_INSTALL_DIR`, `TALKD_REF`, and `TALKD_SKIP_PI_INSTALL=1`. On Linux, set `TALKD_PLAY_CMD` to an available WAV player such as `aplay {file}` or `paplay {file}`.
 
 ## Try without installing
 
