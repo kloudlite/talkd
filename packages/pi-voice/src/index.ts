@@ -47,7 +47,7 @@ export default function talkdVoiceExtension(pi: ExtensionAPI) {
   }
 
   pi.registerCommand("voice", {
-    description: "Talk to Talkd, the parallel audio assistant for this Pi harness",
+    description: "Start/stop Talkd recording for this Pi harness",
     handler: async (_args, ctx) => {
       attach(ctx);
       await voice.toggle(ctx);
@@ -55,7 +55,7 @@ export default function talkdVoiceExtension(pi: ExtensionAPI) {
   });
 
   pi.registerShortcut(Key.f12, {
-    description: "Talkd assistant: talk/send/interrupt",
+    description: "Talkd recording: start/send/interrupt",
     handler: async (ctx) => {
       attach(ctx);
       await voice.toggle(ctx);
@@ -63,7 +63,7 @@ export default function talkdVoiceExtension(pi: ExtensionAPI) {
   });
 
   pi.registerShortcut(Key.ctrlShift("v"), {
-    description: "Talkd assistant: talk/send/interrupt",
+    description: "Talkd recording: start/send/interrupt",
     handler: async (ctx) => {
       attach(ctx);
       await voice.toggle(ctx);

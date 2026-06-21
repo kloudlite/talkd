@@ -30,7 +30,7 @@ flowchart LR
     Kokoro[Kokoro English ONNX\nmodel + voices + espeak data]
   end
 
-  Pi <-->|F12 voice control + status| VoiceAgent
+  Pi <-->|F12 Talkd recording + status| VoiceAgent
   VoiceAgent <-->|STT/TTS JSON frames + raw PCM chunks| Sock
   CLI <-->|JSON frames + raw PCM chunks| Sock
   Sock <-->|net.UnixConn| Service
@@ -146,9 +146,10 @@ Installing `@talkd/pi-voice` runs a best-effort setup step that downloads native
 Inside Pi:
 
 ```text
-F12  start listening
-F12  stop recording and send to Talkd
-F12  while speaking/thinking: interrupt and start listening
+F12 down  start recording
+F12 up    send after Talkd infers release from stopped key repeats
+F12 again fallback: stop recording and send
+F12 while speaking/thinking: interrupt and start recording
 ```
 
 Fallback shortcut:
@@ -157,7 +158,7 @@ Fallback shortcut:
 Ctrl+Shift+V
 ```
 
-No panel is shown; Pi only shows a compact footer/status indicator while Talkd is active. When a Pi session starts, the extension ensures `talkd-service` is available in the background: it reuses an existing socket service if present and starts the installed/local service otherwise without blocking the active Pi UI. Detailed transcript/timing/playback debug output is hidden by default and can be sent to a file with `TALKD_VOICE_DEBUG=1`.
+No panel is shown; Pi only shows a compact footer/status indicator. Talkd does not continuously listen in the background: the microphone is off in the ready/done states, and only `[REC] Talkd: recording active` records audio. Pi's current terminal shortcut API exposes key presses, not direct key-release events, so Talkd ignores F12 auto-repeat while recording and infers release when repeats stop. If a terminal does not provide usable repeats, pressing F12 again is the fallback send action. When a Pi session starts, the extension ensures `talkd-service` is available in the background: it reuses an existing socket service if present and starts the installed/local service otherwise without blocking the active Pi UI. Detailed transcript/timing/playback debug output is hidden by default and can be sent to a file with `TALKD_VOICE_DEBUG=1`.
 
 Your speech goes to a separate lightweight Talkd side-agent context. Talkd uses the current harness snapshot and coordination tools for main Pi context, then activates its own side-agent skill, side-agent instructions/state, and the persisted recent Talkd conversation and decisions for recency. The copilot is read-only/coordination-only: it watches the visible/main harness session, talks with you about what is happening, can proactively respond when useful, and only sends instructions into the main harness when there is actionable work to do. It does not receive direct file editing, writing, shell, or coding tools. By default only Talkd's small recent state is persisted at `~/.pi/agent/talkd-voice-state.json`; `TALKD_VOICE_SESSION_DIR` is optional for persisting Talkd's own lightweight side-agent session. The runtime side-agent skill lives at `packages/pi-voice/side-agent-skills/talkd-side-agent-voice-copilot/SKILL.md`; the package also provides `/skill:talkd-voice-copilot` as reusable maintainer guidance for Talkd behavior and latency work. See `packages/pi-voice/README.md` for the full side-agent architecture.
 
@@ -177,13 +178,15 @@ The service listens on:
 
 ## Voice extension behavior
 
-The Pi extension provides an interactive push-to-talk Talkd copilot:
+The Pi extension provides explicit Talkd recording controls:
 
 ```text
-press F12
-  → start listening
+press and hold F12
+  → start recording
+release F12
+  → Talkd infers release from stopped key repeats and stops recording
 press F12 again
-  → stop recording
+  → fallback stop recording
   → stream PCM to talkd STT
   → send transcript to a private Talkd side-agent context
   → optionally send actionable instructions to the main Pi harness
@@ -191,23 +194,31 @@ press F12 again
   → play the generated audio
 press F12 while speaking/thinking
   → interrupt playback/agent
-  → start listening again
+  → start recording again
 ```
 
 Defaults:
 
-- recording uses `rec` from SoX:
+- recording uses `rec` from SoX only while a Talkd recording turn is active:
   ```bash
   rec -q -t raw -b 16 -e signed-integer -c 1 -r 16000 -
   ```
+- active recording is capped by `TALKD_PUSH_TO_TALK_MAX_MS` to avoid accidental open-mic recording
 - playback uses macOS `afplay`; on Linux set `TALKD_PLAY_CMD`, for example `aplay {file}` or `paplay {file}`
 - the service socket is `~/.talkd/talkd.sock`
 
 Override commands and debug settings:
 
 ```bash
-# custom microphone capture command; must write raw pcm16le mono 16k to stdout
+# custom microphone capture command; must write raw pcm16le mono 16k to stdout.
+# Runs only during active Talkd recording.
 export TALKD_RECORD_CMD='rec -q -t raw -b 16 -e signed-integer -c 1 -r 16000 -'
+
+# recording safety cap; prevents accidental open-mic recording
+export TALKD_PUSH_TO_TALK_MAX_MS=120000
+
+# max gap between terminal key-repeat events while inferring F12 release
+export TALKD_RECORDING_KEY_REPEAT_GAP_MS=900
 
 # custom playback command. {file} is replaced with generated wav path
 export TALKD_PLAY_CMD='afplay {file}'

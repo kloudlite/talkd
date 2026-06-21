@@ -86,7 +86,8 @@ Fast replies may use only the current harness snapshot and recent events. They m
 
 - Start TTS on the first useful complete sentence/chunk rather than waiting for long output.
 - Keep normal spoken output capped with `TALKD_SPOKEN_REPLY_MAX_CHARS`.
-- Preserve incremental TTS queueing, serial playback, cancellation, and F12 barge-in/interruption.
+- Preserve user-initiated recording behavior: no background continuous listening.
+- Preserve incremental TTS queueing, serial playback, cancellation, and barge-in/interruption.
 - Do not optimize by sacrificing interruption responsiveness.
 
 ## Latency Diagnostics

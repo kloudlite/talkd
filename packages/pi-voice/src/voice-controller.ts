@@ -24,6 +24,11 @@ export class VoiceController {
   private lastCtx?: PiCtx;
   private harnessTimer?: ReturnType<typeof setTimeout>;
   private idleReactionTimer?: ReturnType<typeof setTimeout>;
+  private recordingLimitTimer?: ReturnType<typeof setTimeout>;
+  private recordingReleaseTimer?: ReturnType<typeof setTimeout>;
+  private recordingStartedAt = 0;
+  private lastRecordingShortcutAt = 0;
+  private sawRecordingRepeat = false;
   private lastHarnessChange = "";
   private pendingSkippedHarnessChange = "";
   private lastSpokenAt = 0;
@@ -46,28 +51,28 @@ export class VoiceController {
       this.playback?.stop();
       this.playback = undefined;
       if (this.options.agent.isBusy()) await this.options.agent.abort();
-      this.startListening(ctx, "Talkd: interrupted — listening");
+      this.startRecordingTurn(ctx, "Talkd: interrupted — recording active");
       return;
     }
 
     if (this.state === "thinking" || this.options.agent.isBusy()) {
       this.speechQueue?.cancel();
       await this.options.agent.abort();
-      this.startListening(ctx, "Talkd: interrupted — listening");
+      this.startRecordingTurn(ctx, "Talkd: interrupted — recording active");
       return;
     }
 
     if (this.state === "transcribing") {
-      this.startListening(ctx, "Talkd: listening");
+      this.startRecordingTurn(ctx, "Talkd: recording active");
       return;
     }
 
     if (this.state === "listening") {
-      await this.stopAndDiscuss(ctx);
+      await this.handleRecordingShortcut(ctx);
       return;
     }
 
-    this.startListening(ctx);
+    this.startRecordingTurn(ctx);
   }
 
   onHarnessEvent(change: string, ctx: PiCtx) {
@@ -101,27 +106,81 @@ export class VoiceController {
     this.harnessTimer = undefined;
     if (this.idleReactionTimer) clearTimeout(this.idleReactionTimer);
     this.idleReactionTimer = undefined;
+    this.clearRecordingLimitTimer();
+    this.clearRecordingReleaseTimer();
     this.options.agent.dispose();
     if (this.lastCtx) this.clearWidget(this.lastCtx);
   }
 
-  private startListening(ctx: PiCtx, message = "Talkd: listening — F12 sends") {
+  private startRecordingTurn(ctx: PiCtx, message = "Talkd: recording active — F12 sends") {
     this.runSerial++;
     if (this.harnessTimer) clearTimeout(this.harnessTimer);
     this.harnessTimer = undefined;
+    this.clearRecordingLimitTimer();
     this.recorder?.stop();
     this.speechQueue?.cancel();
     this.speechQueue = undefined;
     this.playback?.stop();
     this.playback = undefined;
+    this.recordingStartedAt = Date.now();
+    this.lastRecordingShortcutAt = this.recordingStartedAt;
+    this.sawRecordingRepeat = false;
     this.recorder = startRecording(16000);
     this.setState("listening", ctx, message);
+    this.scheduleRecordingLimit(ctx);
+  }
+
+  private async handleRecordingShortcut(ctx: PiCtx) {
+    const now = Date.now();
+    const repeatGapMs = readNumberEnv("TALKD_RECORDING_KEY_REPEAT_GAP_MS", 900);
+    const gapMs = now - this.lastRecordingShortcutAt;
+    this.lastRecordingShortcutAt = now;
+
+    if (gapMs <= repeatGapMs) {
+      this.sawRecordingRepeat = true;
+      this.scheduleRecordingReleaseInference(ctx, repeatGapMs);
+      voiceLatencyLog("recording.shortcut_repeat_ignored", { gapMs, repeatGapMs });
+      return;
+    }
+
+    await this.stopAndDiscuss(ctx);
+  }
+
+  private scheduleRecordingReleaseInference(ctx: PiCtx, repeatGapMs: number) {
+    this.clearRecordingReleaseTimer();
+    this.recordingReleaseTimer = setTimeout(() => {
+      if (this.state !== "listening" || !this.recorder || !this.sawRecordingRepeat) return;
+      voiceLatencyLog("recording.release_inferred", { repeatGapMs });
+      void this.stopAndDiscuss(ctx);
+    }, repeatGapMs);
+  }
+
+  private scheduleRecordingLimit(ctx: PiCtx) {
+    const maxMs = readNumberEnv("TALKD_PUSH_TO_TALK_MAX_MS", 120_000);
+    this.recordingLimitTimer = setTimeout(() => {
+      if (this.state !== "listening" || !this.recorder) return;
+      voiceLatencyLog("recording.max_duration", { maxMs });
+      this.setState("listening", ctx, "Talkd: recording limit reached — sending");
+      void this.stopAndDiscuss(ctx);
+    }, maxMs);
+  }
+
+  private clearRecordingLimitTimer() {
+    if (this.recordingLimitTimer) clearTimeout(this.recordingLimitTimer);
+    this.recordingLimitTimer = undefined;
+  }
+
+  private clearRecordingReleaseTimer() {
+    if (this.recordingReleaseTimer) clearTimeout(this.recordingReleaseTimer);
+    this.recordingReleaseTimer = undefined;
   }
 
   private async stopAndDiscuss(ctx: PiCtx) {
     const recorder = this.recorder;
     if (!recorder) return;
 
+    this.clearRecordingLimitTimer();
+    this.clearRecordingReleaseTimer();
     const runId = ++this.runSerial;
     const turnId = this.nextTimingId++;
     const totalStart = nowMs();
@@ -594,8 +653,8 @@ function voiceIndicator(state: State, detail?: string): {
   const interrupted = /interrupted/i.test(detail ?? "");
   if (state === "listening") {
     return {
-      status: (theme) => theme.fg("accent", interrupted ? "Talkd: interrupted, listening" : "Talkd: listening"),
-      widget: (theme) => theme.fg("accent", interrupted ? "[REC] Talkd: interrupted, listening" : "[REC] Talkd: listening") + theme.fg("dim", " — recording microphone. Press F12 to send."),
+      status: (theme) => theme.fg("accent", interrupted ? "Talkd: interrupted, recording" : "Talkd: recording active"),
+      widget: (theme) => theme.fg("accent", interrupted ? "[REC] Talkd: interrupted, recording" : "[REC] Talkd: recording active") + theme.fg("dim", " — mic is on now. Release F12 to send, or press F12 again."),
     };
   }
   if (state === "transcribing") {
@@ -627,7 +686,7 @@ function voiceIndicator(state: State, detail?: string): {
   const done = /done|complete|finished/i.test(detail ?? "");
   return {
     status: (theme) => theme.fg("dim", done ? "Talkd: done" : "Talkd: ready (F12)"),
-    widget: (theme) => theme.fg("dim", done ? "[DONE] Talkd: done — press F12 to talk." : "[READY] Talkd: ready — press F12 to talk."),
+    widget: (theme) => theme.fg("dim", done ? "[DONE] Talkd: done — press F12 to record." : "[READY] Talkd: ready — press F12 to record."),
   };
 }
 

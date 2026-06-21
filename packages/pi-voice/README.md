@@ -2,11 +2,11 @@
 
 Pi package that adds a clean, headless F12 Talkd copilot to Pi.
 
-Talkd runs as a separate side-agent context. Press F12 to talk to it; it watches the current visible Pi harness session and talks with you about what is happening. It only sends messages into the main harness when it decides there is an actionable coding instruction to send.
+Talkd runs as a separate side-agent context and does not continuously listen in the background. Press F12 to explicitly start microphone capture. When the terminal emits key-repeat events while F12 is held, Talkd ignores the repeats and infers release when repeats stop, then sends the utterance. If your terminal does not emit usable repeats/release signals, press F12 again to stop recording and send.
 
 It uses:
 
-- Pi extension API for commands, shortcuts, status, and overlays
+- Pi extension API for commands, shortcuts, status, and the compact Talkd widget
 - `talkd-service` for local STT/TTS over `~/.talkd/talkd.sock`
 - SoX `rec` for microphone capture by default
 - `afplay` for playback by default on macOS
@@ -42,9 +42,10 @@ pi -e ./packages/pi-voice/src/index.ts
 Inside Pi:
 
 ```text
-F12  start listening
-F12  stop recording and send to Talkd
-F12  while speaking/thinking: interrupt and start listening
+F12 down  start recording
+F12 up    send after Talkd infers release from stopped key repeats
+F12 again fallback: stop recording and send
+F12 while speaking/thinking: interrupt and start recording
 ```
 
 Fallback shortcut:
@@ -53,7 +54,7 @@ Fallback shortcut:
 Ctrl+Shift+V
 ```
 
-No floating panel is shown. Pi only shows a compact status indicator while Talkd is active. On session start, the extension ensures `talkd-service` is running in the background: it reuses an existing service if one responds on the socket, otherwise it starts `~/.talkd/bin/talkd-service` or the local checkout service without blocking the active Pi UI. Detailed transcript/timing/playback debug output is hidden by default and can be written to a file with `TALKD_VOICE_DEBUG=1`.
+No floating panel is shown. Pi only shows a compact status indicator. The ready state means the microphone is off. The `[REC] Talkd: recording active` state is the only state that records microphone audio; release F12 to send when key-repeat inference is available, or press F12 again as a fallback. On session start, the extension ensures `talkd-service` is running in the background: it reuses an existing service if one responds on the socket, otherwise it starts `~/.talkd/bin/talkd-service` or the local checkout service without blocking the active Pi UI. Detailed transcript/timing/playback debug output is hidden by default and can be written to a file with `TALKD_VOICE_DEBUG=1`.
 
 The transcript is **not** blindly pasted into the main Pi session. The Talkd side-agent is read-only/coordination-only: it does not receive Pi file-editing, write, bash, or other coding tools. Instead:
 
@@ -83,7 +84,7 @@ Then restart Pi or run:
 ## Commands
 
 ```text
-/voice  same as F12: talk/send/interrupt
+/voice  same as F12: start/send/interrupt recording
 ```
 
 ## Environment variables
@@ -98,8 +99,15 @@ export TALKD_HOME="$HOME/.talkd"
 # service startup override
 export TALKD_SERVICE_CMD="$HOME/.talkd/bin/talkd-service --sock $HOME/.talkd/talkd.sock"
 
-# microphone capture command, must output raw pcm16le mono 16k to stdout
+# microphone capture command, must output raw pcm16le mono 16k to stdout.
+# This command runs only during active Talkd recording.
 export TALKD_RECORD_CMD='rec -q -t raw -b 16 -e signed-integer -c 1 -r 16000 -'
+
+# recording safety cap; prevents accidental open-mic recording
+export TALKD_PUSH_TO_TALK_MAX_MS=120000
+
+# max gap between terminal key-repeat events while inferring F12 release
+export TALKD_RECORDING_KEY_REPEAT_GAP_MS=900
 
 # playback command; {file} is replaced with generated wav path
 export TALKD_PLAY_CMD='afplay {file}'
@@ -200,7 +208,7 @@ Tuning knobs:
 - `TALKD_STREAMING_TTS_MIN_WORDS` — word-count threshold for a natural flush; default `16`.
 - `TALKD_STREAMING_TTS_CHUNK_CHARS` — fallback maximum chunk size when no sentence boundary arrives; default `280`.
 
-Barge-in behavior is preserved: pressing F12 during thinking, TTS generation, or playback interrupts the side-agent/playback and starts listening again.
+Barge-in behavior is preserved: pressing F12 during thinking, TTS generation, or playback interrupts the side-agent/playback and starts a new recording turn.
 
 ## Notes
 

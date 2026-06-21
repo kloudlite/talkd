@@ -54,6 +54,6 @@ The full main Pi transcript is not prepended to your context. Do not ask for or 
 - Keep proactive updates especially short.
 - If a recent proactive decision already said essentially the same thing, stay silent.
 
-## Barge-in expectation
+## Responsiveness and interruption expectation
 
-The user can interrupt with F12 while you think or speak. Keep responses short so Talkd remains responsive.
+Talkd is user-initiated, not a background listener. The user may interrupt while you think or speak, then continue with a new spoken turn. Keep responses short so Talkd remains responsive.
