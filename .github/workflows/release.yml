@@ -79,9 +79,41 @@ jobs:
             dist/talkd-service-${{ matrix.target }}.tar.gz.sha256
           if-no-files-found: error
 
+  package-pi-voice:
+    name: Package Pi voice extension
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.release_tag || github.ref }}
+
+      - name: Package Pi package
+        run: |
+          set -euo pipefail
+          mkdir -p dist/pi-voice
+          cp packages/pi-voice/package.json dist/pi-voice/package.json
+          cp packages/pi-voice/README.md dist/pi-voice/README.md
+          cp packages/pi-voice/tsconfig.json dist/pi-voice/tsconfig.json
+          cp -R packages/pi-voice/src dist/pi-voice/src
+          cp -R packages/pi-voice/scripts dist/pi-voice/scripts
+          cp -R packages/pi-voice/side-agent-skills dist/pi-voice/side-agent-skills
+          cd dist
+          tar czf talkd-pi-voice.tar.gz pi-voice
+          shasum -a 256 talkd-pi-voice.tar.gz > talkd-pi-voice.tar.gz.sha256
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: talkd-pi-voice
+          path: |
+            dist/talkd-pi-voice.tar.gz
+            dist/talkd-pi-voice.tar.gz.sha256
+          if-no-files-found: error
+
   github-release:
     name: Publish GitHub release
-    needs: build-service
+    needs: [build-service, package-pi-voice]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.inputs.release_tag != ''
     steps:

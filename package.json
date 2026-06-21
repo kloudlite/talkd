@@ -8,10 +8,10 @@
   ],
   "scripts": {
     "build": "turbo run build",
-    "dev": "bun --cwd talkd-service dev",
+    "dev": "bun run --cwd talkd-service dev",
     "check": "turbo run check",
     "test": "turbo run test",
-    "service": "bun --cwd talkd-service dev",
+    "service": "bun run --cwd talkd-service dev",
     "install:runtime": "./scripts/install-runtime.sh",
     "ci": "dagger call ci --source=.",
     "dagger:check": "dagger call check --source=.",

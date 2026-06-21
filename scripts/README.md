@@ -6,12 +6,12 @@
 curl -fsSL https://raw.githubusercontent.com/kloudlite/talkd/main/scripts/install.sh | bash
 ```
 
-This detects macOS arm64/x64 or Linux x64/arm64, clones Talkd to `~/.talkd/src/talkd`, runs the existing package/runtime setup, downloads the matching verified published service binary when available, and registers the Pi package when the `pi` CLI is available. If no published binary exists, setup falls back to a local Go build when Go is installed.
+This detects macOS arm64/x64 or Linux x64/arm64, installs runtime assets under `~/.talkd`, downloads verified published service/package assets when available, and registers the Pi package when the `pi` CLI is available. It does not clone the repo; if no published binary exists, setup falls back to a temporary GitHub source archive build when Go is installed.
 
 Overrides:
 
 ```bash
-TALKD_INSTALL_DIR=/opt/talkd-src TALKD_REF=main TALKD_SERVICE_RELEASE_VERSION=v0.1.0 TALKD_SKIP_PI_INSTALL=1 \
+TALKD_HOME=/opt/talkd TALKD_REF=main TALKD_SERVICE_RELEASE_VERSION=v0.1.0 TALKD_SKIP_PI_INSTALL=1 \
   bash scripts/install.sh
 ```
 
@@ -47,10 +47,10 @@ Supported by the installer: macOS arm64/x64 and Linux x64/arm64. Native Windows 
 
 ## Pi voice package setup
 
-The Pi package wraps the runtime and binary installers in an idempotent setup script. It tries a verified GitHub release binary first, then falls back to a local Go build:
+The Pi package still has an idempotent setup script for development checkouts. It tries a verified GitHub release binary first, then falls back to a local Go build:
 
 ```bash
-bun --cwd packages/pi-voice run setup:runtime
+bun run --cwd packages/pi-voice setup:runtime
 ```
 
 Package installation runs the same setup automatically via `postinstall` when scripts are enabled. Use `TALKD_PI_VOICE_SKIP_SETUP=1` to skip it, `TALKD_PI_VOICE_FORCE_SETUP=1` to force reinstall checks, `TALKD_SERVICE_RELEASE_VERSION=vX.Y.Z` to pin a release, or `TALKD_SKIP_BINARY_DOWNLOAD=1` to force source build.
@@ -59,13 +59,13 @@ The root Dagger gate (`bun run ci`) validates these installer scripts with `bash
 
 ## Release binary workflow
 
-`.github/workflows/release.yml` builds service archives for `linux-amd64`, `linux-arm64`, `darwin-amd64`, and `darwin-arm64`.
+`.github/workflows/release.yml` builds service archives for `linux-amd64`, `linux-arm64`, `darwin-amd64`, and `darwin-arm64`, plus `talkd-pi-voice.tar.gz`.
 
 - Manual `workflow_dispatch` with no input: builds and uploads workflow artifacts only. Good dry run; no GitHub Release is published.
 - Tag push `v*`: builds artifacts and publishes release assets.
 - Manual `workflow_dispatch` with `release_tag`: publishes only if that existing tag starts with `v`; the workflow refuses to create an implicit tag.
 
-Each release asset has a matching `.sha256`; the installer verifies it before installing.
+Each release asset has a matching `.sha256`; the installer verifies it before installing. Without a release, the installer can still use a temporary source archive fallback; set `TALKD_SKIP_SOURCE_BUILD=1` to forbid that.
 
 ## Binary installer
 

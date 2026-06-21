@@ -75,7 +75,7 @@ flowchart LR
 curl -fsSL https://raw.githubusercontent.com/kloudlite/talkd/main/scripts/install.sh | bash
 ```
 
-Supports macOS arm64/x64 and Linux x64/arm64. The installer downloads a verified published service binary when available, otherwise falls back to a local Go build. Details and overrides live in `scripts/README.md`.
+Supports macOS arm64/x64 and Linux x64/arm64. The installer does not clone the repo: it installs runtime assets, downloads verified release assets when available, and keeps only the Pi package files under `~/.talkd/pi-voice`. Details and overrides live in `scripts/README.md`.
 
 ## Manual install
 
@@ -110,7 +110,7 @@ bun run dagger:test
 bun run dagger:validate
 ```
 
-Release builds are in `.github/workflows/release.yml`: manual dispatch builds downloadable artifacts only by default; publishing requires an existing explicit `v*` tag. Export Linux service/client binaries from Dagger when needed:
+Release builds are in `.github/workflows/release.yml`: manual dispatch builds downloadable service/package artifacts only by default; publishing requires an existing explicit `v*` tag. Export Linux service/client binaries from Dagger when needed:
 
 ```bash
 dagger call service-binaries --source=. export --path ./dist/service
@@ -139,12 +139,12 @@ curl -fsSL https://raw.githubusercontent.com/kloudlite/talkd/main/scripts/instal
 
 # or from a checkout
 bun install
-bun --cwd packages/pi-voice run setup:runtime
+bun run --cwd packages/pi-voice setup:runtime
 bun run build
 pi install -l ./packages/pi-voice
 ```
 
-Installing `@talkd/pi-voice` runs the same runtime setup; set `TALKD_PI_VOICE_SKIP_SETUP=1` to skip it.
+The curl installer registers the installed `~/.talkd/pi-voice` package with Pi when the `pi` CLI is available.
 
 Inside Pi, Talkd is explicit recording only: F12 starts recording, F12 release is inferred from stopped key repeats when available, and F12 again is the fallback send action. See `packages/pi-voice/README.md` for the detailed controls and knobs.
 

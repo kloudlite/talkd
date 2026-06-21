@@ -79,7 +79,7 @@ async function resolveServiceCommand(socketPath: string, logPath: string): Promi
   }
 
   throw new Error(
-    "talkd-service not found. Run `bun --cwd packages/pi-voice run setup:runtime`, install ~/.talkd/bin/talkd-service, or set TALKD_SERVICE_CMD.",
+    "talkd-service not found. Run `bun run --cwd packages/pi-voice setup:runtime`, install ~/.talkd/bin/talkd-service, or set TALKD_SERVICE_CMD.",
   );
 }
 

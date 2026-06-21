@@ -13,7 +13,7 @@ It uses:
 
 ## Setup
 
-Installing this package runs the Talkd runtime setup: native Sherpa/ONNX libraries, STT/TTS model assets, and a `talkd-service` binary under `~/.talkd`. Binary download/fallback details live in `../../scripts/README.md`.
+The curl installer installs this package under `~/.talkd/pi-voice` without cloning the repo, then registers it with Pi. Runtime/binary download details live in `../../scripts/README.md`.
 
 One-command install from GitHub:
 
@@ -25,7 +25,7 @@ From the repo root you can also run setup explicitly:
 
 ```bash
 bun install
-bun --cwd packages/pi-voice run setup:runtime
+bun run --cwd packages/pi-voice setup:runtime
 bun run build
 ```
 
