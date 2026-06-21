@@ -8,9 +8,13 @@ set -euo pipefail
 #   TALKD_HOME                         install location, default ~/.talkd
 #   TALKD_PI_VOICE_SKIP_SETUP=1        skip all work
 #   TALKD_PI_VOICE_FORCE_SETUP=1       run even when assets/binary appear present
+#   TALKD_SERVICE_RELEASE_VERSION      GitHub release tag to download, default latest
+#   TALKD_SKIP_BINARY_DOWNLOAD=1       skip release binary download and build locally
 
 TALKD_HOME="${TALKD_HOME:-$HOME/.talkd}"
 FORCE="${TALKD_PI_VOICE_FORCE_SETUP:-0}"
+RELEASE_REPO="${TALKD_SERVICE_RELEASE_REPO:-kloudlite/talkd}"
+RELEASE_VERSION="${TALKD_SERVICE_RELEASE_VERSION:-latest}"
 
 log() { printf '\033[1;34m[pi-voice setup]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[pi-voice setup]\033[0m %s\n' "$*" >&2; }
@@ -32,6 +36,91 @@ runtime_present() {
 
 binary_present() {
   [ -x "$TALKD_HOME/bin/talkd-service" ]
+}
+
+release_asset_name() {
+  local os arch target_os target_arch
+  os="$(uname -s)"
+  arch="$(uname -m)"
+  case "$os" in
+    Darwin) target_os="darwin" ;;
+    Linux) target_os="linux" ;;
+    *) return 1 ;;
+  esac
+  case "$arch" in
+    x86_64|amd64) target_arch="amd64" ;;
+    arm64|aarch64) target_arch="arm64" ;;
+    *) return 1 ;;
+  esac
+  printf 'talkd-service-%s-%s.tar.gz\n' "$target_os" "$target_arch"
+}
+
+release_download_url() {
+  local asset="$1"
+  if [ "$RELEASE_VERSION" = "latest" ]; then
+    printf 'https://github.com/%s/releases/latest/download/%s\n' "$RELEASE_REPO" "$asset"
+  else
+    printf 'https://github.com/%s/releases/download/%s/%s\n' "$RELEASE_REPO" "$RELEASE_VERSION" "$asset"
+  fi
+}
+
+verify_checksum() {
+  local checksum="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum -c "$checksum"
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 -c "$checksum"
+  else
+    warn "No sha256 verifier found; cannot safely install release binary."
+    return 1
+  fi
+}
+
+install_release_binary() {
+  [ "${TALKD_SKIP_BINARY_DOWNLOAD:-0}" = "1" ] && return 1
+  command -v curl >/dev/null 2>&1 || return 1
+  command -v tar >/dev/null 2>&1 || return 1
+
+  local asset url tmp
+  asset="$(release_asset_name)" || return 1
+  url="$(release_download_url "$asset")"
+  tmp="$(mktemp -d)"
+
+  log "Downloading published service binary: $asset"
+  if ! curl -fsSL -o "$tmp/$asset" "$url"; then
+    rm -rf "$tmp"
+    warn "No published service binary found at $url"
+    return 1
+  fi
+  if ! curl -fsSL -o "$tmp/$asset.sha256" "$url.sha256"; then
+    rm -rf "$tmp"
+    warn "Checksum not found for $asset; refusing unsafe binary install."
+    return 1
+  fi
+
+  (cd "$tmp" && verify_checksum "$asset.sha256") || { rm -rf "$tmp"; return 1; }
+  if ! tar xzf "$tmp/$asset" -C "$tmp"; then
+    rm -rf "$tmp"
+    warn "Could not extract $asset"
+    return 1
+  fi
+
+  if [ -x "$REPO_ROOT/scripts/install-binary.sh" ]; then
+    if ! TALKD_HOME="$TALKD_HOME" "$REPO_ROOT/scripts/install-binary.sh" "$tmp/talkd-service" talkd-service; then
+      rm -rf "$tmp"
+      return 1
+    fi
+    if [ -f "$tmp/talkd-client" ]; then
+      TALKD_HOME="$TALKD_HOME" "$REPO_ROOT/scripts/install-binary.sh" "$tmp/talkd-client" talkd-client || true
+    fi
+  else
+    mkdir -p "$TALKD_HOME/bin"
+    cp "$tmp/talkd-service" "$TALKD_HOME/bin/talkd-service"
+    [ -f "$tmp/talkd-client" ] && cp "$tmp/talkd-client" "$TALKD_HOME/bin/talkd-client"
+    chmod +x "$TALKD_HOME/bin/talkd-service" "$TALKD_HOME/bin/talkd-client" 2>/dev/null || true
+    warn "Installed release binary without rpath patching because install-binary.sh was not found."
+  fi
+  rm -rf "$tmp"
 }
 
 install_runtime() {
@@ -57,6 +146,11 @@ install_binary() {
     return
   fi
 
+  if install_release_binary; then
+    log "Installed published talkd-service binary"
+    return
+  fi
+
   if [ ! -d "$REPO_ROOT/talkd-service" ]; then
     warn "talkd-service source not found next to this package."
     warn "Set TALKD_SERVICE_CMD or install $TALKD_HOME/bin/talkd-service manually."
@@ -64,8 +158,8 @@ install_binary() {
   fi
 
   if ! command -v go >/dev/null 2>&1; then
-    warn "Go is not installed; cannot build talkd-service."
-    warn "Install Go, then run: bun --cwd packages/pi-voice run setup:runtime"
+    warn "Go is not installed and no published service binary was available."
+    warn "Install Go, set TALKD_SERVICE_RELEASE_VERSION to an existing release, or set TALKD_SERVICE_CMD."
     return
   fi
 
@@ -79,6 +173,9 @@ install_binary() {
     log "Installing talkd-service binary"
     if ! TALKD_HOME="$TALKD_HOME" "$REPO_ROOT/scripts/install-binary.sh" "$REPO_ROOT/talkd-service/bin/talkd-service" talkd-service; then
       warn "Binary installer failed. Set TALKD_SERVICE_CMD or install the service binary manually."
+    fi
+    if [ -x "$REPO_ROOT/talkd-service/bin/talkd-client" ]; then
+      TALKD_HOME="$TALKD_HOME" "$REPO_ROOT/scripts/install-binary.sh" "$REPO_ROOT/talkd-service/bin/talkd-client" talkd-client || true
     fi
   else
     mkdir -p "$TALKD_HOME/bin"

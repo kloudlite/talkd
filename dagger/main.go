@@ -177,6 +177,7 @@ func sourceBase(source *dagger.Directory, image string) *dagger.Container {
 const distributionValidationScript = `set -euo pipefail
 
 for path in \
+  .github/workflows/release.yml \
   packages/pi-voice/src/index.ts \
   packages/pi-voice/src/voice-controller.ts \
   packages/pi-voice/src/voice-agent.ts \

@@ -105,7 +105,6 @@ main() {
   detect_platform
   need_cmd git
   need_cmd bun
-  need_cmd go
   need_cmd curl
   need_cmd tar
 
@@ -117,6 +116,10 @@ main() {
 
   log "Installing Talkd runtime assets and service binary"
   bun --cwd packages/pi-voice run setup:runtime
+  if [ ! -x "${TALKD_HOME:-$HOME/.talkd}/bin/talkd-service" ]; then
+    err "talkd-service binary was not installed. Publish a Talkd release for this OS/arch, install Go for source build fallback, or set TALKD_SERVICE_CMD."
+    exit 1
+  fi
 
   install_pi_package
   print_next_steps

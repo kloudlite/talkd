@@ -75,7 +75,7 @@ flowchart LR
 curl -fsSL https://raw.githubusercontent.com/kloudlite/talkd/main/scripts/install.sh | bash
 ```
 
-The installer supports macOS arm64/x64 and Linux x64/arm64. It clones Talkd to `~/.talkd/src/talkd`, runs the existing runtime setup, builds/installs `talkd-service`, registers the Pi package when `pi` is available, and prints next steps. Override with `TALKD_INSTALL_DIR`, `TALKD_REF`, or `TALKD_SKIP_PI_INSTALL=1`.
+Supports macOS arm64/x64 and Linux x64/arm64. The installer downloads a verified published service binary when available, otherwise falls back to a local Go build. Details and overrides live in `scripts/README.md`.
 
 ## Manual install
 
@@ -110,7 +110,7 @@ bun run dagger:test
 bun run dagger:validate
 ```
 
-Export Linux service/client binaries from the Dagger build when needed:
+Release builds are in `.github/workflows/release.yml`: manual dispatch builds downloadable artifacts only by default; publishing requires an existing explicit `v*` tag. Export Linux service/client binaries from Dagger when needed:
 
 ```bash
 dagger call service-binaries --source=. export --path ./dist/service
@@ -144,7 +144,7 @@ bun run build
 pi install -l ./packages/pi-voice
 ```
 
-Installing `@talkd/pi-voice` runs a best-effort setup step that downloads native runtime libraries and STT/TTS model assets, builds `talkd-service` when the Go source is available, and installs the service binary under `~/.talkd/bin`. Set `TALKD_PI_VOICE_SKIP_SETUP=1` to skip that install-time setup.
+Installing `@talkd/pi-voice` runs the same runtime setup; set `TALKD_PI_VOICE_SKIP_SETUP=1` to skip it.
 
 Inside Pi, Talkd is explicit recording only: F12 starts recording, F12 release is inferred from stopped key repeats when available, and F12 again is the fallback send action. See `packages/pi-voice/README.md` for the detailed controls and knobs.
 

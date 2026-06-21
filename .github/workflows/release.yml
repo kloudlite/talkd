@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing v* tag to publish. Leave empty to build artifacts only."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build-service:
+    name: Build service ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - target: linux-arm64
+            os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+          - target: darwin-amd64
+            os: macos-13
+            goos: darwin
+            goarch: amd64
+          - target: darwin-arm64
+            os: macos-14
+            goos: darwin
+            goarch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.release_tag || github.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.24.x"
+          cache-dependency-path: talkd-service/go.sum
+
+      - name: Build binaries
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cd talkd-service
+          go build -o ../dist/talkd-service ./cmd/talkd-service
+          go build -o ../dist/talkd-client ./cmd/talkd-client
+
+      - name: Package asset
+        run: |
+          set -euo pipefail
+          cd dist
+          asset="talkd-service-${{ matrix.target }}.tar.gz"
+          tar czf "$asset" talkd-service talkd-client
+          shasum -a 256 "$asset" > "$asset.sha256"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: talkd-service-${{ matrix.target }}
+          path: |
+            dist/talkd-service-${{ matrix.target }}.tar.gz
+            dist/talkd-service-${{ matrix.target }}.tar.gz.sha256
+          if-no-files-found: error
+
+  github-release:
+    name: Publish GitHub release
+    needs: build-service
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.inputs.release_tag != ''
+    steps:
+      - name: Check out tags
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve existing release tag
+        id: release
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            tag="${{ github.event.inputs.release_tag }}"
+          fi
+          case "$tag" in
+            v*) ;;
+            *) echo "::error::release_tag must start with v"; exit 1 ;;
+          esac
+          git fetch --tags --force
+          if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::error::Tag $tag does not exist. Create/push the tag explicitly before publishing a release."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Download service artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          files: dist/*
+          fail_on_unmatched_files: true
