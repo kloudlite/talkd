@@ -7,6 +7,7 @@
   "scripts": {
     "check": "tsc --noEmit",
     "build": "tsc -p tsconfig.json",
+    "test": "bun test src/*.test.ts",
     "setup:runtime": "bash ./scripts/setup-talkd-runtime.sh",
     "postinstall": "bash ./scripts/setup-talkd-runtime.sh"
   },

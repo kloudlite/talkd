@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { CustomEditor, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { playPCMAsWav, startRecording, type PlaybackHandle, type RecordingHandle } from "./audio";
+import { analyzePCM16LE, playPCMAsWav, startRecording, type PlaybackHandle, type RecordingHandle } from "./audio";
 import { voiceDebugLog, voiceLatencyLog } from "./debug";
 import { limitPlainSpeech, makeConversationalSummary, toPlainSpeechText } from "./speech-text";
 import { TalkdClient } from "./talkd-client";
@@ -201,6 +201,8 @@ export class VoiceController {
       const recordingStart = nowMs();
       const pcm = await recorder.done;
       if (!this.isCurrentRun(runId)) return;
+      const signal = analyzePCM16LE(pcm, recorder.sampleRate);
+      voiceLatencyLog("recording.signal", { turnId, device: recorder.device, seconds: round2(signal.seconds), max: round4(signal.max), rms: round4(signal.rms), lowPct: round1(signal.lowPct) });
       this.logTiming("recording_finalize", recordingStart, { turnId, bytes: pcm.length, audioSeconds: audioSeconds(pcm, recorder.sampleRate) });
       if (pcm.length < 3200) {
         this.logTiming("pipeline_too_little_audio", totalStart, { turnId });
@@ -791,6 +793,18 @@ function nowMs(): number {
 
 function audioSeconds(pcm: Buffer, sampleRate: number): number {
   return Math.round((pcm.length / 2 / sampleRate) * 100) / 100;
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function round4(value: number): number {
+  return Math.round(value * 10000) / 10000;
 }
 
 function countWords(text: string): number {

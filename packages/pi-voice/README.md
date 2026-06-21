@@ -195,7 +195,7 @@ Talkd does not receive direct coding tools. It cannot directly read, edit, write
 
 ### Proactive decision records
 
-When the main harness changes, Talkd decides whether to stay quiet or speak a short update. During long-running busy harness work, Talkd may give intermittent updates for meaningful progress, phase changes, likely stalls/failures, or user attention needed, but it throttles and dedupes them instead of narrating every tool event. Both spoken and silent outcomes are recorded in Talkd's recent state and, for the current side-agent turn, as hidden marked context:
+When the main harness changes, Talkd decides whether to stay quiet or speak a short update. Proactive coordination has two allowed modes: necessary attention-needed moments and meaningful high-level behind-the-scenes progress. For attention-needed moments, Talkd should interrupt for a user decision/action requirement, requested watch completion, failure, or surprising important state change. For progress, Talkd may summarize phase changes, evidence found, likely root-cause direction, validation results, and next action, but it must not narrate every tool event, command, or small step. Both spoken and silent outcomes are recorded in Talkd's recent state and, for the current side-agent turn, as hidden marked context:
 
 ```text
 <<<TALKD_PROACTIVE_DECISION_BEGIN>>>
@@ -206,6 +206,14 @@ decision: SILENCE | SPOKEN_UPDATE
 ```
 
 These records are distinguishable from normal user/assistant turns and from main harness snapshot/tool context.
+
+### Spoken detail level
+
+Talkd defaults to short spoken replies, but may give more detailed explanations when the user explicitly asks, when a complex topic needs detail for understanding, or when summarizing meaningful behind-the-scenes progress. Detailed replies should stay conversational, avoid per-tool narration, and offer or continue with more detail only if useful.
+
+### User-action diagnostics
+
+Diagnostics that depend on the user doing something during a time window, especially audio recording, must be coordinated explicitly. Talkd/Pi should announce attention is required, get readiness, show a visible action/timing banner when possible, give a spoken countdown, and only then start the window. Silence, low audio, or bad transcription is inconclusive unless the user was clearly prompted and acknowledged readiness.
 
 ### Incremental speech synthesis
 
