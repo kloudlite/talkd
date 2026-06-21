@@ -182,7 +182,6 @@ for path in \
   packages/pi-voice/src/voice-agent.ts \
   packages/pi-voice/src/side-agent-skill.ts \
   packages/pi-voice/side-agent-skills/talkd-side-agent-voice-copilot/SKILL.md \
-  packages/pi-voice/skills/talkd-voice-copilot/SKILL.md \
   talkd-service/cmd/talkd-service/main.go \
   talkd-service/internal/speech/engine.go \
   scripts/install.sh \
@@ -191,7 +190,7 @@ for path in \
   test -f "$path"
 done
 
-for stale in go-kokoro go-sherpa-stt kokoro.cpp whisper.cpp sherpa-models kokoro-en packages/pi-voice/src/runtime-guidance.ts packages/pi-voice/src/voice-overlay.ts talkd-service/internal/audio; do
+for stale in go-kokoro go-sherpa-stt kokoro.cpp whisper.cpp sherpa-models kokoro-en packages/pi-voice/skills packages/pi-voice/src/runtime-guidance.ts packages/pi-voice/src/voice-overlay.ts talkd-service/internal/audio; do
   test ! -e "$stale"
 done
 
@@ -211,7 +210,7 @@ const root = JSON.parse(fs.readFileSync("package.json", "utf8"));
 const pi = JSON.parse(fs.readFileSync("packages/pi-voice/package.json", "utf8"));
 if (!root.scripts["dagger:ci"] || !root.scripts.ci) throw new Error("missing Dagger root scripts");
 if (!pi.pi || !Array.isArray(pi.pi.extensions) || !pi.pi.extensions.includes("./src/index.ts")) throw new Error("missing Pi extension entry");
-if (!Array.isArray(pi.pi.skills) || !pi.pi.skills.includes("./skills")) throw new Error("missing Pi skill entry");
+if ("skills" in pi.pi) throw new Error("Talkd package must not install primary-session Pi skills");
 '
 
 echo distribution validation completed

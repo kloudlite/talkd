@@ -60,7 +60,7 @@ Fallback shortcut:
 Ctrl+Shift+V
 ```
 
-No floating panel is shown. Pi only shows a compact status indicator. The ready state means the microphone is off. The `[REC] Talkd: recording active` state is the only state that records microphone audio; release F12 to send when key-repeat inference is available, or press F12 again as a fallback. On session start, the extension ensures `talkd-service` is running in the background: it reuses an existing service if one responds on the socket, otherwise it starts `~/.talkd/bin/talkd-service` or the local checkout service without blocking the active Pi UI. Detailed transcript/timing/playback debug output is hidden by default and can be written to a file with `TALKD_VOICE_DEBUG=1`.
+No floating panel is shown. When Pi's editor hook is available, Talkd uses the input border color as the primary state indicator: accent while recording, warning while transcribing/thinking, success while speaking, and error on failures. While active, a tiny right-side token is rendered inside the editor border: `REC`, `STT`, `THINK`, `TTS`, `PLAY`, or `ERR`; it is hidden when idle. Talkd does not use routine footer/status text or below-editor widget hints. If another custom editor prevents this hook, Talkd does not add a verbose fallback indicator. On session start, the extension ensures `talkd-service` is running in the background: it reuses an existing service if one responds on the socket, otherwise it starts `~/.talkd/bin/talkd-service` or the local checkout service without blocking the active Pi UI. Detailed transcript/timing/playback debug output is hidden by default and can be written to a file with `TALKD_VOICE_DEBUG=1`.
 
 The transcript is **not** blindly pasted into the main Pi session. The Talkd side-agent is read-only/coordination-only: it does not receive Pi file-editing, write, bash, or other coding tools. Instead:
 
@@ -121,6 +121,9 @@ export TALKD_PLAY_CMD='afplay {file}'
 # minimum gap between proactive spoken harness updates
 export TALKD_MIN_PROACTIVE_GAP_MS=10000
 
+# minimum gap between intermittent updates while the main harness is still busy
+export TALKD_BUSY_PROACTIVE_MIN_GAP_MS=60000
+
 # persisted Talkd recent state; stores only recent Talkd turns/decisions
 # defaults to ~/.pi/agent/talkd-voice-state.json
 export TALKD_VOICE_STATE_PATH="$HOME/.pi/agent/talkd-voice-state.json"
@@ -150,11 +153,11 @@ export TALKD_VOICE_THINKING_NOTICE_INTERVAL_MS=10000
 export TALKD_VOICE_DEBUG_UI=1
 ```
 
-## Talkd side-agent skill and maintainer skill
+## Talkd side-agent skill
 
 Talkd's runtime side-agent activates a dedicated side-agent skill from `side-agent-skills/talkd-side-agent-voice-copilot/SKILL.md`. The extension loads only that explicit skill path while keeping default skill discovery disabled, then injects the skill content into hidden side-agent context. This keeps the runtime lightweight while giving Talkd its actual speaking/watching behavior.
 
-This package also provides a Pi maintainer skill at `skills/talkd-voice-copilot/SKILL.md`. Use `/skill:talkd-voice-copilot` when implementing, reviewing, or tuning Talkd behavior. The maintainer skill should stay aligned with the runtime side-agent skill.
+The `@talkd/pi-voice` package intentionally does not install any primary-session Pi skills. The main coding harness loads the extension only; Talkd-specific skill behavior belongs inside the separate voice side-agent session.
 
 ## Side-agent architecture
 
@@ -192,7 +195,7 @@ Talkd does not receive direct coding tools. It cannot directly read, edit, write
 
 ### Proactive decision records
 
-When the main harness changes, Talkd decides whether to stay quiet or speak a short update. Both outcomes are recorded in Talkd's recent state and, for the current side-agent turn, as hidden marked context:
+When the main harness changes, Talkd decides whether to stay quiet or speak a short update. During long-running busy harness work, Talkd may give intermittent updates for meaningful progress, phase changes, likely stalls/failures, or user attention needed, but it throttles and dedupes them instead of narrating every tool event. Both spoken and silent outcomes are recorded in Talkd's recent state and, for the current side-agent turn, as hidden marked context:
 
 ```text
 <<<TALKD_PROACTIVE_DECISION_BEGIN>>>

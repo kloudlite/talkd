@@ -1,8 +1,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { playPCMAsWav, startRecording, type PlaybackHandle, type RecordingHandle } from "./audio";
-import { isVoiceDebugUIEnabled, stripAnsi, voiceDebugLog, voiceLatencyLog } from "./debug";
+import { voiceDebugLog, voiceLatencyLog } from "./debug";
 import { limitPlainSpeech, makeConversationalSummary, toPlainSpeechText } from "./speech-text";
 import { TalkdClient } from "./talkd-client";
 import { VoiceAgent } from "./voice-agent";
@@ -24,12 +24,18 @@ export class VoiceController {
   private lastCtx?: PiCtx;
   private harnessTimer?: ReturnType<typeof setTimeout>;
   private idleReactionTimer?: ReturnType<typeof setTimeout>;
+  private busyHarnessTimer?: ReturnType<typeof setTimeout>;
   private recordingLimitTimer?: ReturnType<typeof setTimeout>;
   private recordingReleaseTimer?: ReturnType<typeof setTimeout>;
   private lastRecordingShortcutAt = 0;
   private lastHarnessChange = "";
   private pendingSkippedHarnessChange = "";
+  private busyHarnessEvents: string[] = [];
+  private lastBusyProactiveAt = 0;
+  private lastProactiveReplyKey = "";
   private lastSpokenAt = 0;
+  private stateDetail: string | undefined;
+  private editorIndicatorInstalled = false;
   private nextTimingId = 1;
   private runSerial = 0;
   private readonly client = new TalkdClient(process.env.TALKD_SOCK ?? join(homedir(), ".talkd", "talkd.sock"));
@@ -38,6 +44,7 @@ export class VoiceController {
 
   attach(ctx: PiCtx) {
     this.lastCtx = ctx;
+    this.installEditorIndicator(ctx);
     this.renderStatus(ctx);
   }
 
@@ -83,6 +90,7 @@ export class VoiceController {
     // and retry once the harness becomes idle so completion updates are not lost.
     if (!ctx.isIdle()) {
       this.rememberSkippedHarnessChange(change, ctx, "harness_busy");
+      this.rememberBusyHarnessEvent(change, ctx);
       return;
     }
     if (!this.canRunProactiveUpdate(ctx)) {
@@ -104,10 +112,16 @@ export class VoiceController {
     this.harnessTimer = undefined;
     if (this.idleReactionTimer) clearTimeout(this.idleReactionTimer);
     this.idleReactionTimer = undefined;
+    if (this.busyHarnessTimer) clearTimeout(this.busyHarnessTimer);
+    this.busyHarnessTimer = undefined;
     this.clearRecordingLimitTimer();
     this.clearRecordingReleaseTimer();
     this.options.agent.dispose();
-    if (this.lastCtx) this.clearWidget(this.lastCtx);
+    if (this.lastCtx) {
+      if (this.editorIndicatorInstalled) this.lastCtx.ui.setEditorComponent(undefined);
+      this.clearWidget(this.lastCtx);
+    }
+    this.editorIndicatorInstalled = false;
   }
 
   private startRecordingTurn(ctx: PiCtx, message = "Talkd: recording active — F12 sends") {
@@ -248,8 +262,72 @@ export class VoiceController {
     }, delay);
   }
 
+  private rememberBusyHarnessEvent(change: string, ctx: PiCtx) {
+    this.busyHarnessEvents.push(change.replace(/\s+/g, " ").trim());
+    this.busyHarnessEvents = this.busyHarnessEvents.filter(Boolean).slice(-12);
+    this.scheduleBusyHarnessReaction(ctx);
+  }
+
+  private scheduleBusyHarnessReaction(ctx: PiCtx) {
+    if (this.busyHarnessTimer) return;
+    const minGap = readNumberEnv("TALKD_BUSY_PROACTIVE_MIN_GAP_MS", 60_000);
+    const elapsed = Date.now() - this.lastBusyProactiveAt;
+    const delay = this.lastBusyProactiveAt === 0 ? minGap : Math.max(5_000, minGap - elapsed);
+    this.busyHarnessTimer = setTimeout(() => {
+      this.busyHarnessTimer = undefined;
+      void this.reactToBusyHarnessChange(ctx);
+    }, delay);
+  }
+
   private canRunProactiveUpdate(ctx: PiCtx): boolean {
     return ctx.isIdle() && this.state !== "listening" && this.state !== "transcribing" && this.state !== "thinking" && this.state !== "speaking" && !this.options.agent.isBusy();
+  }
+
+  private canRunBusyProactiveUpdate(ctx: PiCtx): boolean {
+    return !ctx.isIdle() && this.state !== "listening" && this.state !== "transcribing" && this.state !== "thinking" && this.state !== "speaking" && !this.options.agent.isBusy();
+  }
+
+  private async reactToBusyHarnessChange(ctx: PiCtx) {
+    if (ctx.isIdle()) {
+      this.scheduleIdleReaction();
+      return;
+    }
+    if (!this.canRunBusyProactiveUpdate(ctx)) {
+      if (this.busyHarnessEvents.length > 0) this.scheduleBusyHarnessReaction(ctx);
+      return;
+    }
+
+    const events = this.busyHarnessEvents.splice(0);
+    if (events.length === 0) return;
+    this.lastBusyProactiveAt = Date.now();
+
+    const turnId = this.nextTimingId++;
+    const totalStart = nowMs();
+    const change = [
+      "Long-running harness progress while the main harness is still busy.",
+      "Decide whether this merits a short spoken update now or silence.",
+      "Recent busy events:",
+      ...events.map((event) => `- ${event}`),
+    ].join("\n");
+
+    try {
+      this.setState("thinking", ctx, "Talkd: checking progress");
+      const agentStart = nowMs();
+      const reply = await this.options.agent.observeHarnessChange(change, ctx);
+      this.logTiming("busy_proactive_voice_agent", agentStart, { turnId, replyChars: reply.length, eventCount: events.length });
+      if (isSilence(reply) || this.isDuplicateProactiveReply(reply)) {
+        this.logTiming("busy_proactive_silence_total", totalStart, { turnId, eventCount: events.length });
+        this.setState("idle", ctx);
+        return;
+      }
+      const speakStart = nowMs();
+      await this.speak(reply, ctx, turnId, readNumberEnv("TALKD_PROACTIVE_SPOKEN_MAX_CHARS", 100));
+      this.logTiming("busy_proactive_speak_total", speakStart, { turnId });
+      this.logTiming("busy_proactive_total", totalStart, { turnId, eventCount: events.length });
+    } catch (error) {
+      this.logTiming("busy_proactive_error", totalStart, { turnId, eventCount: events.length });
+      this.setState("error", ctx, error instanceof Error ? error.message : String(error));
+    }
   }
 
   private async reactToHarnessChange() {
@@ -278,7 +356,7 @@ export class VoiceController {
       const agentStart = nowMs();
       const reply = await this.options.agent.observeHarnessChange(this.lastHarnessChange, ctx);
       this.logTiming("proactive_voice_agent", agentStart, { turnId, replyChars: reply.length });
-      if (isSilence(reply)) {
+      if (isSilence(reply) || this.isDuplicateProactiveReply(reply)) {
         this.logTiming("proactive_silence_total", totalStart, { turnId });
         this.setState("idle", ctx);
         return;
@@ -445,27 +523,42 @@ export class VoiceController {
     }
   }
 
+  private isDuplicateProactiveReply(reply: string): boolean {
+    const key = toPlainSpeechText(reply).toLowerCase().replace(/\s+/g, " ").trim();
+    if (!key) return true;
+    if (key === this.lastProactiveReplyKey) {
+      voiceLatencyLog("proactive.dedupe", { replyChars: reply.length });
+      return true;
+    }
+    this.lastProactiveReplyKey = key;
+    return false;
+  }
+
   private isCurrentRun(runId: number): boolean {
     return this.runSerial === runId;
   }
 
   private setState(state: State, ctx: PiCtx, detail?: string) {
     this.state = state;
+    this.stateDetail = detail;
     voiceDebugLog("state", { state, detail });
     this.renderStatus(ctx, detail);
   }
 
-  private renderStatus(ctx: PiCtx, detail?: string) {
-    const theme = ctx.ui.theme;
-    const indicator = voiceIndicator(this.state, detail);
+  private installEditorIndicator(ctx: PiCtx) {
+    if (this.editorIndicatorInstalled || ctx.ui.getEditorComponent()) return;
+    ctx.ui.setEditorComponent((tui, editorTheme, keybindings) =>
+      new TalkdStatusEditor(tui, editorTheme, keybindings, () => voiceToken(this.state, this.stateDetail), () => editorBorderColor(this.state, ctx.ui.theme, editorTheme.borderColor), () => ctx.ui.theme),
+    );
+    this.editorIndicatorInstalled = true;
+  }
 
-    // Keep one persistent Talkd indicator visible across idle/done/active
-    // states. Use the below-editor widget as the single visible surface and
-    // leave footer status empty to avoid duplicate rendering.
+  private renderStatus(ctx: PiCtx, _detail?: string) {
+    // The input border is the primary Talkd state indicator. Keep footer/status
+    // and widgets empty; the custom editor draws any active token inside the
+    // editor border itself.
     ctx.ui.setStatus("talkd-voice", undefined);
-    const label = indicator.widget(theme);
-    const debug = isVoiceDebugUIEnabled() && detail ? theme.fg("dim", `  ·  ${compactForWidget(detail, 80)}`) : "";
-    ctx.ui.setWidget?.("talkd-voice", [label + debug], { placement: "belowEditor" });
+    ctx.ui.setWidget?.("talkd-voice", undefined, { placement: "belowEditor" });
   }
 
   private clearWidget(ctx: PiCtx) {
@@ -641,44 +734,50 @@ function cleanSpeechChunk(text: string): string {
   return toPlainSpeechText(text).trim();
 }
 
-function voiceIndicator(state: State, detail?: string): { widget(theme: PiCtx["ui"]["theme"]): string } {
-  const interrupted = /interrupted/i.test(detail ?? "");
-  if (state === "listening") {
-    return {
-      widget: (theme) => theme.fg("accent", interrupted ? "[REC] Talkd: interrupted, recording" : "[REC] Talkd: recording active") + theme.fg("dim", " — mic is on now. Release F12 to send, or press F12 again."),
-    };
+class TalkdStatusEditor extends CustomEditor {
+  constructor(
+    tui: ConstructorParameters<typeof CustomEditor>[0],
+    editorTheme: ConstructorParameters<typeof CustomEditor>[1],
+    keybindings: ConstructorParameters<typeof CustomEditor>[2],
+    private readonly getToken: () => string | undefined,
+    private readonly getBorderColor: () => (text: string) => string,
+    private readonly getTheme: () => PiCtx["ui"]["theme"],
+  ) {
+    super(tui, editorTheme, keybindings);
   }
-  if (state === "transcribing") {
-    return {
-      widget: (theme) => theme.fg("warning", "[STT] Talkd: transcribing") + theme.fg("dim", " — converting your speech to text."),
-    };
+
+  render(width: number): string[] {
+    this.borderColor = this.getBorderColor();
+    const lines = super.render(width);
+    const token = this.getToken();
+    if (token && lines[0]) lines[0] = renderEditorTokenLine(width, this.borderColor, token, this.getTheme());
+    return lines;
   }
-  if (state === "thinking") {
-    const preparingSpeech = /speech|tts|prepar/i.test(detail ?? "");
-    return {
-      widget: (theme) => theme.fg("warning", preparingSpeech ? "[TTS] Talkd: preparing reply" : "[THINK] Talkd: thinking") + theme.fg("dim", preparingSpeech ? " — generating the spoken response." : " — assistant is thinking."),
-    };
-  }
-  if (state === "speaking") {
-    return {
-      widget: (theme) => theme.fg("success", "[PLAY] Talkd: speaking") + theme.fg("dim", " — press F12 to interrupt/barge in."),
-    };
-  }
-  if (state === "error") {
-    const message = detail ? ` — ${compactForWidget(detail, 100)}` : "";
-    return {
-      widget: (theme) => theme.fg("error", "[ERR] Talkd: error") + theme.fg("dim", message),
-    };
-  }
-  const done = /done|complete|finished/i.test(detail ?? "");
-  return {
-    widget: (theme) => theme.fg("dim", done ? "[DONE] Talkd: done — press F12 to record." : "[READY] Talkd: ready — press F12 to record."),
-  };
 }
 
-function compactForWidget(text: string, max = 140): string {
-  const normalized = stripAnsi(text).replace(/\s+/g, " ").trim();
-  return normalized.length <= max ? normalized : `${normalized.slice(0, max - 1)}…`;
+function renderEditorTokenLine(width: number, borderColor: (text: string) => string, token: string, theme: PiCtx["ui"]["theme"]): string {
+  const label = ` ${token} `;
+  if (width < label.length) return borderColor("─".repeat(width));
+  const borderWidth = width - label.length;
+  const color = token === "ERR" ? "error" : token === "PLAY" ? "success" : token === "REC" ? "accent" : "warning";
+  return borderColor("─".repeat(borderWidth)) + theme.fg(color, label);
+}
+
+function voiceToken(state: State, detail?: string): string | undefined {
+  if (state === "listening") return "REC";
+  if (state === "transcribing") return "STT";
+  if (state === "thinking") return /speech|tts|prepar/i.test(detail ?? "") ? "TTS" : "THINK";
+  if (state === "speaking") return "PLAY";
+  if (state === "error") return "ERR";
+  return undefined;
+}
+
+function editorBorderColor(state: State, theme: PiCtx["ui"]["theme"], fallback: (text: string) => string): (text: string) => string {
+  if (state === "listening") return (text) => theme.fg("accent", text);
+  if (state === "transcribing" || state === "thinking") return (text) => theme.fg("warning", text);
+  if (state === "speaking") return (text) => theme.fg("success", text);
+  if (state === "error") return (text) => theme.fg("error", text);
+  return fallback;
 }
 
 function readNumberEnv(name: string, fallback: number): number {

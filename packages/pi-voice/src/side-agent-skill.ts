@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const TALKD_SIDE_AGENT_SKILL_NAME = "talkd-side-agent-voice-copilot";
-export const TALKD_SIDE_AGENT_SKILL_VERSION = "2026-06-21.2";
+export const TALKD_SIDE_AGENT_SKILL_VERSION = "2026-06-21.3";
 
 const FALLBACK_SKILL_CONTENT = `# Talkd Side-Agent Voice Copilot Skill\n\nYou are Talkd, a lightweight spoken copilot for the active Pi harness. Answer the user's actual question directly in one short natural sentence. Use the harness snapshot, recent events, branch summary, and get_harness_state for context. Stay read-only/coordination-only. Do not repeat main assistant messages verbatim. Ask the user to repeat garbled speech. Prefer silence for routine proactive updates.`;
 

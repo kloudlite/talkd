@@ -11,8 +11,7 @@
     "postinstall": "bash ./scripts/setup-talkd-runtime.sh"
   },
   "pi": {
-    "extensions": ["./src/index.ts"],
-    "skills": ["./skills"]
+    "extensions": ["./src/index.ts"]
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
