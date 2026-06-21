@@ -59,7 +59,7 @@ The root Dagger gate (`bun run ci`) validates these installer scripts with `bash
 
 ## Release binary workflow
 
-`.github/workflows/release.yml` builds service archives for `linux-amd64`, `linux-arm64`, `darwin-amd64`, and `darwin-arm64`, plus `talkd-pi-voice.tar.gz`.
+`.github/workflows/release.yml` builds service archives for `linux-amd64`, `linux-arm64`, and `darwin-arm64`, plus `talkd-pi-voice.tar.gz`. Intel macOS can still use the source-build fallback.
 
 - Manual `workflow_dispatch` with no input: builds and uploads workflow artifacts only. Good dry run; no GitHub Release is published.
 - Tag push `v*`: builds artifacts and publishes release assets.
